@@ -1,7 +1,30 @@
-# OSx Files
+# macOS
 .DS_Store
 
-# IDE Configuration
+# IDE
 .idea/
+.vscode/
+.vs/
 .vs_code/
 .air/
+
+# task
+.task
+
+# Credentials and secrets
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.p12
+credentials*
+secrets*
+
+# PowerShell
+ConsoleHost_history.txt
+
+# Logs and temp
+*.log
+temp/
+tmp/

@@ -137,13 +137,14 @@ By default the script downloads the specified agent version automatically before
 |---|---|
 | macOS | `brew install go-task` |
 | Windows | `winget install Task.Task` |
-| Linux | `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin` |
+| Linux | `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin` |
 
 Available tasks:
 
 | Task | Description |
 |---|---|
 | `task lint` | Run PSScriptAnalyzer against all module source files |
+| `task validate` | Validate the module can be imported and list its commands |
 | `task unblock` | Unblock all files after cloning (Windows only) |
 
 Run `task --list` to see all tasks with descriptions.
@@ -188,3 +189,13 @@ The module exposes these functions after `Import-Module .\PSLiongard.psd1`:
 | `Test-LiongardAgentHeartbeat` | Assert the agent has heartbeated within N minutes |
 | `Test-LiongardHeartbeatLog` | Assert heartbeat log files exist and have content |
 | `Test-LiongardScheduledTask` | Assert the `LiongardAgentUpdater` scheduled task exists |
+
+---
+
+## Legal
+
+This project is licensed under the [Apache License 2.0](LICENSE).
+
+Use of this software is subject to the Liongard [Terms of Use](https://www.liongard.com/terms-of-use/) and [Privacy Policy](https://www.liongard.com/privacy-policy/).
+
+"Liongard" and the Liongard logo are trademarks of Liongard, Inc. Unauthorized use is prohibited.

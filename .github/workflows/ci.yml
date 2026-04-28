@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-validate:
+    name: Lint and validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+
+      - name: Install Dependencies
+        run: task install:deps
+
+      - name: Validate module
+        run: task validate
+
+      - name: Lint
+        run: task lint

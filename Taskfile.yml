@@ -10,38 +10,105 @@ tasks:
       Requires PowerShell Core (pwsh) and PSScriptAnalyzer on all platforms:
         macOS:   brew install powershell
         Linux:   https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux
-        Windows: winget install Microsoft.PowerShell
+        Windows: PowerShell is pre-installed; run 'task install:deps' to install PSScriptAnalyzer
 
       One-time module setup (all platforms):
         pwsh -Command "Install-Module PSScriptAnalyzer -Scope CurrentUser -Force"
+    deps:
+      - validate
     cmds:
       - pwsh -NoProfile -NonInteractive -Command "Invoke-ScriptAnalyzer -Path ./**/* -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse -EnableExit"
 
   validate:
     desc: Validates the PSLiongard module can be imported
+    deps:
+      - install:deps
+    sources:
+      - ./**/*.ps
     cmds:
       - pwsh -Command "Import-Module .\PSLiongard.psd1 -Force; Get-Command -Module PSLiongard"
 
   install:deps:
-    desc: Install the requires system dependencies for development
+    desc: Install the required system dependencies for development after installing Taskfile
+    sources:
+      - "Taskfile.yml"
     cmds:
-      - cmd: brew install powershell pre-commit
-        platforms: [darwin, linux]
-      - cmd: |
-          winget install Microsoft.PowerShell
-          pip install pre-commit
+      - task: install:unix
+        platforms: [darwin,linux]
+      - task: install:windows
         platforms: [windows]
-      - pwsh -Command "Install-PSResource -Name PSScriptAnalyzer -Reinstall"
-      - task: install:pre-commit-hooks
+      - task: install:pre-commit
 
-  install:pre-commit-hooks:
-    desc: Install the pre-commit git hook (all platforms)
+  install:homebrew:
+    desc: Install Homebrew if not already present
     internal: true
+    platforms: [darwin, linux]
+    env:
+      NONINTERACTIVE: true
+    status:
+      - command -v brew
+    cmds:
+      - cmd: |
+          SUDO=$([ "$(id -u)" -eq 0 ] || echo sudo)
+          $SUDO apt-get update && $SUDO apt-get install -y build-essential curl git
+        platforms: [linux]
+      - /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      - cmd: grep -qF 'brew shellenv' "${HOME}/.profile" || echo 'eval "$({{.HOMEBREW_PATH}}/brew shellenv)"' >> "${HOME}/.profile"
+        platforms: [linux]
+      - cmd: grep -qF 'brew shellenv' "${HOME}/.zprofile" || echo 'eval "$({{.HOMEBREW_PATH}}/brew shellenv)"' >> "${HOME}/.zprofile"
+        platforms: [darwin]
+
+  install:unix:
+    desc: Install dependencies on macOS and Linux
+    internal: true
+    platforms: [darwin, linux]
+    vars:
+      HOMEBREW_PATH:
+        sh: if [ "$(uname -s)" = 'Linux' ]; then echo "/home/linuxbrew/.linuxbrew/bin"; else echo "/opt/homebrew/bin"; fi
+    deps:
+      - install:homebrew
+    sources:
+      - "Taskfile.yml"
+    cmds:
+      - PATH="{{.HOMEBREW_PATH}}:$PATH" brew install powershell pre-commit
+      - PATH="{{.HOMEBREW_PATH}}:$PATH" pwsh -NonInteractive -Command "Install-PSResource -Name PSScriptAnalyzer -Scope CurrentUser -Reinstall -TrustRepository"
+
+  install:windows:
+    desc: Install dependencies on Windows
+    internal: true
+    platforms: [windows]
+    cmds:
+      - task: install:winget
+      - winget install --id Microsoft.PowerShell --source winget --force
+      - pwsh -NonInteractive -Command "Install-PSResource -Name PSScriptAnalyzer -Reinstall -TrustRepository"
+      - winget install astral-sh.uv --force
+      - pwsh -NonInteractive -Command "uv tool install pre-commit"
+      - pwsh -NonInteractive -Command "uv tool update-shell"
+
+  install:winget:
+    desc: Download, verify, and install winget
+    internal: true
+    platforms: [windows]
+    if: powershell -NonInteractive -Command "((Get-Command winget).Source = '')"
+    cmds:
+      - powershell -NonInteractive -Command "Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing"
+      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid ((Get-AuthenticodeSignature winget.msixbundle).Status)\" }"
+      - powershell -NonInteractive -Command "Add-AppxPackage winget.msixbundle; Remove-Item winget.msixbundle"
+
+  install:pre-commit:
+    desc: Install the pre-commit git hooks for the project
     summary: |
       Installs pre-commit hooks defined in .pre-commit-config.yaml into .git/hooks.
       Requires pre-commit (to install: 'pip install pre-commit' or 'brew install pre-commit')
+    deps:
+      - install:deps
+    sources:
+      - .pre-commit-config.yaml
     cmds:
-      - pre-commit install
+      - cmd: pre-commit install
+        platforms: [windows]
+      - cmd: PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install
+        platforms: [darwin, linux]
 
   unblock:
     desc: Unblock module files after cloning (Windows only; skipped on macOS/Linux)
