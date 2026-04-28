@@ -1,0 +1,48 @@
+version: '3'
+
+tasks:
+  lint:
+    desc: Run PSScriptAnalyzer against the module source
+    summary: |
+      Runs Invoke-ScriptAnalyzer with PSScriptAnalyzerSettings.psd1 and exits
+      non-zero if any Error or Warning diagnostics are found (-EnableExit).
+
+      Requires PowerShell Core (pwsh) and PSScriptAnalyzer on all platforms:
+        macOS:   brew install powershell
+        Linux:   https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux
+        Windows: winget install Microsoft.PowerShell
+
+      One-time module setup (all platforms):
+        pwsh -Command "Install-Module PSScriptAnalyzer -Scope CurrentUser -Force"
+    cmds:
+      - pwsh -NoProfile -NonInteractive -Command "Invoke-ScriptAnalyzer -Path ./**/* -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse -EnableExit"
+
+  install:deps:
+    desc: Install the requires system dependencies for development
+    cmds:
+      - cmd: brew install powershell pre-commit
+        platforms: [darwin, linux]
+      - cmd: |
+          winget install Microsoft.PowerShell
+          pip install pre-commit
+        platforms: [windows]
+      - pwsh -Command "Install-PSResource -Name PSScriptAnalyzer -Reinstall"
+      - task: install:pre-commit-hooks
+
+  install:pre-commit-hooks:
+    desc: Install the pre-commit git hook (all platforms)
+    internal: true
+    summary: |
+      Installs pre-commit hooks defined in .pre-commit-config.yaml into .git/hooks.
+      Requires pre-commit (to install: 'pip install pre-commit' or 'brew install pre-commit')
+    cmds:
+      - pre-commit install
+
+  unblock:
+    desc: Unblock module files after cloning (Windows only; skipped on macOS/Linux)
+    summary: |
+      Windows marks files cloned or downloaded from the internet as blocked.
+      Run this once from the repo root to remove the block on all files.
+    platforms: [windows]
+    cmds:
+      - pwsh -NoProfile -NonInteractive -Command "Get-ChildItem -Path . -Recurse | Unblock-File"

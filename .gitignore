@@ -1,0 +1,7 @@
+# OSx Files
+.DS_Store
+
+# IDE Configuration
+.idea/
+.vs_code/
+.air/

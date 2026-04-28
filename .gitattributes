@@ -1,0 +1,9 @@
+# Normalize all text files to LF in the repo.
+* text=auto eol=lf
+
+# Binary — never mangle line endings.
+*.exe    binary
+*.msi    binary
+*.png    binary
+*.ico    binary
+*.zip    binary

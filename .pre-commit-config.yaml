@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: psscriptanalyzer
+        name: PSScriptAnalyzer
+        language: system
+        entry: pwsh
+        args:
+          - -NoProfile
+          - -NonInteractive
+          - -Command
+          - "Invoke-ScriptAnalyzer **/*.ps1 -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse -EnableExit"
+        pass_filenames: false
+        files: \.(ps1|psm1|psd1)$
