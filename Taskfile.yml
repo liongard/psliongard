@@ -17,6 +17,11 @@ tasks:
     cmds:
       - pwsh -NoProfile -NonInteractive -Command "Invoke-ScriptAnalyzer -Path ./**/* -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse -EnableExit"
 
+  validate:
+    desc: Validates the PSLiongard module can be imported
+    cmds:
+      - pwsh -Command "Import-Module .\PSLiongard.psd1 -Force; Get-Command -Module PSLiongard"
+
   install:deps:
     desc: Install the requires system dependencies for development
     cmds:
