@@ -10,6 +10,8 @@ jobs:
   lint-and-validate:
     name: Lint and validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: task install:deps
 
-      - name: Validate module
+      - name: Validate PSLiongard
         run: task validate
 
       - name: Lint

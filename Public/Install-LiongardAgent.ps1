@@ -12,6 +12,8 @@ function Install-LiongardAgent {
     msiexec.exe; EXE installations call the installer directly and additionally
     support the -InstallNetworkIQ flag.
 
+    Credentials are redacted in log output.
+
     Returns $true on success, $false on failure.
 
 .PARAMETER LiongardURL
@@ -66,8 +68,10 @@ function Install-LiongardAgent {
         [Parameter(Mandatory=$true)]
         [string]$AccessSecret,
 
+        [ValidateScript({ -not $_ -or (Test-Path $_ -PathType Leaf) })]
         [string]$MSIPath,
 
+        [ValidateScript({ -not $_ -or (Test-Path $_ -PathType Leaf) })]
         [string]$InstallerPath,
 
         [string]$Environment,
@@ -77,8 +81,9 @@ function Install-LiongardAgent {
         [switch]$InstallNetworkIQ
     )
 
-    $agentServiceName    = "roaragent.exe"
-    $liongardInstallPath = "C:\Program Files (x86)\LiongardInc"
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Install-LiongardAgent requires Administrator privileges."
+    }
 
     Write-LiongardLog "Installing agent with parameters:"
     Write-LiongardLog "  Environment: $(if ($Environment) { $Environment } else { 'Not specified' })"
@@ -87,8 +92,6 @@ function Install-LiongardAgent {
     Write-LiongardLog "  MSI: $(if ($MSIPath) { $MSIPath } else { 'Not specified' })"
 
     if ($MSIPath) {
-        if (-not (Test-Path $MSIPath)) { throw "MSI file not found at: $MSIPath" }
-
         $logFile     = "$env:TEMP\LiongardAgent-Install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
         $installArgs = @(
             "/i", "`"$MSIPath`"", "/qn", "/norestart",
@@ -101,7 +104,8 @@ function Install-LiongardAgent {
         if ($AgentName)   { $installArgs += "LIONGARDAGENTNAME=$AgentName" }
 
         $installArgsString = $installArgs -join " "
-        Write-LiongardLog "Running: msiexec $installArgsString"
+        $redacted = $installArgsString -replace '(?i)(Access(?:Key|Secret)=)\S+', '$1***'
+        Write-LiongardLog "Running: msiexec $redacted"
 
         if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Install Liongard Agent from MSI")) {
             return $false
@@ -110,8 +114,6 @@ function Install-LiongardAgent {
         $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $installArgsString -Wait -PassThru -NoNewWindow
     }
     elseif ($InstallerPath) {
-        if (-not (Test-Path $InstallerPath)) { throw "Installer file not found at: $InstallerPath" }
-
         $logFile     = "$env:TEMP\LiongardAgent-Install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
         $installArgs = @(
             "/quiet", "/log", "`"$logFile`"",
@@ -125,7 +127,8 @@ function Install-LiongardAgent {
         if ($AgentName)   { $installArgs += "LiongardAgentName=$AgentName" }
 
         $installArgsString = $installArgs -join " "
-        Write-LiongardLog "Running: $InstallerPath $installArgsString"
+        $redacted = $installArgsString -replace '(?i)(Access(?:Key|Secret)=)\S+', '$1***'
+        Write-LiongardLog "Running: $InstallerPath $redacted"
 
         if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Install Liongard Agent from EXE")) {
             return $false
@@ -167,10 +170,7 @@ function Install-LiongardAgent {
     }
 
     if ($InstallerPath -and $InstallNetworkIQ) {
-        $vcRedist = Get-ItemProperty `
-            HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*, `
-            HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
-            -ErrorAction SilentlyContinue |
+        $vcRedist = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "Microsoft Visual C++*Redistributable*x86*" -and $_.DisplayVersion } |
             Sort-Object DisplayVersion -Descending |
             Select-Object -First 1

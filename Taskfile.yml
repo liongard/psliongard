@@ -77,11 +77,12 @@ tasks:
     desc: Install dependencies on Windows
     internal: true
     platforms: [windows]
+    deps:
+      - install:winget
     cmds:
-      - task: install:winget
-      - winget install --id Microsoft.PowerShell --source winget --force
+      - winget install --id Microsoft.PowerShell --source winget --no-upgrade --force
       - pwsh -NonInteractive -Command "Install-PSResource -Name PSScriptAnalyzer -Reinstall -TrustRepository"
-      - winget install astral-sh.uv --force
+      - winget install --id astral-sh.uv --no-upgrade --force
       - pwsh -NonInteractive -Command "uv tool install pre-commit"
       - pwsh -NonInteractive -Command "uv tool update-shell"
 
@@ -89,10 +90,10 @@ tasks:
     desc: Download, verify, and install winget
     internal: true
     platforms: [windows]
-    if: powershell -NonInteractive -Command "((Get-Command winget).Source = '')"
+    if: powershell -NonInteractive -Command "-not $(Get-Command winget)"
     cmds:
       - powershell -NonInteractive -Command "Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing"
-      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid ((Get-AuthenticodeSignature winget.msixbundle).Status)\" }"
+      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid [(Get-AuthenticodeSignature winget.msixbundle).Status]\" }"
       - powershell -NonInteractive -Command "Add-AppxPackage winget.msixbundle; Remove-Item winget.msixbundle"
 
   install:pre-commit:
@@ -100,15 +101,22 @@ tasks:
     summary: |
       Installs pre-commit hooks defined in .pre-commit-config.yaml into .git/hooks.
       Requires pre-commit (to install: 'pip install pre-commit' or 'brew install pre-commit')
-    deps:
-      - install:deps
     sources:
       - .pre-commit-config.yaml
     cmds:
-      - cmd: pre-commit install
+      - cmd: |
+         uv tool run pre-commit -- install
+         pre-commit install
         platforms: [windows]
       - cmd: PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install
         platforms: [darwin, linux]
+
+  unblock:run:
+    desc: Run the unblock command
+    platforms: [windows]
+    prompt: ⚠️ Warning... Are you sure you want to continue?
+    cmds:
+      - pwsh -NoProfile -NonInteractive -Command "Get-ChildItem -Path . -Recurse | Unblock-File"
 
   unblock:
     desc: Unblock module files after cloning (Windows only; skipped on macOS/Linux)
@@ -116,5 +124,12 @@ tasks:
       Windows marks files cloned or downloaded from the internet as blocked.
       Run this once from the repo root to remove the block on all files.
     platforms: [windows]
+    silent: true
     cmds:
-      - pwsh -NoProfile -NonInteractive -Command "Get-ChildItem -Path . -Recurse | Unblock-File"
+      - |
+        echo "Warning... Only unblock module files from trusted sources."
+        echo ""
+        echo "Running the unblock command for PSLiongard repo files..."
+        echo ""
+      - task: unblock:run
+
