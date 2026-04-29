@@ -24,6 +24,7 @@ liongard-powershell/
 │   └── Test-LiongardScheduledTask.ps1
 └── Scripts/               # Standalone scripts that Import-Module PSLiongard
     ├── Download-LiongardAgentInstaller.ps1
+    ├── Install-LiongardAgent.ps1
     └── Test-AgentInstallation.ps1
 ```
 
@@ -50,6 +51,28 @@ Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
 ## Running scripts
 
 ```powershell
+# Install the Liongard Agent on this machine
+.\Scripts\Install-LiongardAgent.ps1 `
+    -InstancePrefix   us1 `
+    -ApiTokenKey      "key" -ApiTokenSecret   "secret" `
+    -AgentTokenKey    "key" -AgentTokenSecret "secret" `
+    -Environment      "Acme Corp"
+
+# Install without environment assignment
+.\Scripts\Install-LiongardAgent.ps1 `
+    -InstancePrefix          us1 `
+    -ApiTokenKey             "key" -ApiTokenSecret   "secret" `
+    -AgentTokenKey           "key" -AgentTokenSecret "secret" `
+    -IncludeEnvironmentValue $false
+
+# Install with Network IQ support (installs Npcap)
+.\Scripts\Install-LiongardAgent.ps1 `
+    -InstancePrefix   us1 `
+    -ApiTokenKey      "key" -ApiTokenSecret   "secret" `
+    -AgentTokenKey    "key" -AgentTokenSecret "secret" `
+    -Environment      "Acme Corp" `
+    -InstallNetworkIQ $true
+
 # Download latest agent installer (defaults to version 5.3.0, validates cosign signature)
 .\Scripts\Download-LiongardAgentInstaller.ps1 -Version "5.3.0"
 

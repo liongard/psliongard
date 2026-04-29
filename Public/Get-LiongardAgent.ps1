@@ -5,8 +5,8 @@ function Get-LiongardAgent {
 
 .DESCRIPTION
     Queries the Liongard REST API to retrieve agent records by exact name, numeric ID,
-    or wildcard name pattern. Automatically falls back from the v1 to the v2 API
-    endpoint if the first request fails.
+    wildcard name pattern, or raw API conditions string. Automatically falls back from
+    the v1 to the v2 API endpoint if the first request fails.
 
 .PARAMETER LiongardURL
     Hostname of the Liongard instance (e.g. us1.app.liongard.com). Omit the
@@ -28,6 +28,11 @@ function Get-LiongardAgent {
     Wildcard pattern to match against agent names (e.g. "TestAgent*").
     Returns an array of matching agents, which may be empty.
 
+.PARAMETER Conditions
+    Raw Liongard API conditions string passed as the ?conditions= query parameter
+    (e.g. "MachineGuid = 'abc-123'"). Returns an array of matching agents, which
+    may be empty.
+
 .OUTPUTS
     System.Management.Automation.PSCustomObject
     A single agent object for the ByName and ByID parameter sets, an array for
@@ -41,11 +46,15 @@ function Get-LiongardAgent {
 
 .EXAMPLE
     Get-LiongardAgent -LiongardURL "us1.app.liongard.com" -ApiKey $key -ApiSecret $secret -NamePattern "TestAgent*"
+
+.EXAMPLE
+    Get-LiongardAgent -LiongardURL "us1.app.liongard.com" -ApiKey $key -ApiSecret $secret -Conditions "MachineGuid = 'abc-def-123'"
 #>
     [CmdletBinding(DefaultParameterSetName = 'ByName')]
     [OutputType([PSCustomObject], ParameterSetName = 'ByName')]
     [OutputType([PSCustomObject], ParameterSetName = 'ByID')]
     [OutputType([PSCustomObject[]], ParameterSetName = 'ByNamePattern')]
+    [OutputType([PSCustomObject[]], ParameterSetName = 'ByConditions')]
     param(
         [Parameter(Mandatory=$true)]
         [string]$LiongardURL,
@@ -64,7 +73,11 @@ function Get-LiongardAgent {
 
         # Returns all agents whose Name matches the wildcard pattern (e.g. "TestAgent*")
         [Parameter(Mandatory=$true, ParameterSetName='ByNamePattern')]
-        [string]$NamePattern
+        [string]$NamePattern,
+
+        # Raw ?conditions= filter string (e.g. "MachineGuid = 'abc-123'")
+        [Parameter(Mandatory=$true, ParameterSetName='ByConditions')]
+        [string]$Conditions
     )
 
     $apiParams = @{ LiongardURL = $LiongardURL; ApiKey = $ApiKey; ApiSecret = $ApiSecret }
@@ -114,6 +127,22 @@ function Get-LiongardAgent {
 
             if ($result.Success -and $result.Data) {
                 return [PSCustomObject[]]@($result.Data | Where-Object { $_.Name -like $NamePattern })
+            }
+
+            return [PSCustomObject[]]@()
+        }
+
+        'ByConditions' {
+            $encoded = [System.Uri]::EscapeDataString($Conditions)
+            $result = Invoke-LiongardApi @apiParams -Method "GET" -Endpoint "/api/v1/agents?conditions=$encoded"
+
+            if (-not $result.Success) {
+                $result = Invoke-LiongardApi @apiParams -Method "GET" -Endpoint "/v2/agents?conditions=$encoded" -UseApiSubdomain
+            }
+
+            if ($result.Success -and $result.Data) {
+                if ($result.Data -is [Array]) { return [PSCustomObject[]]@($result.Data) }
+                return [PSCustomObject[]]@($result.Data)
             }
 
             return [PSCustomObject[]]@()
