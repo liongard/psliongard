@@ -8,12 +8,13 @@ function Uninstall-LiongardAgent {
 
     - If -InstallerPath is provided, the original EXE installer is invoked with
       /uninstall /quiet.
-    - Otherwise, the function searches for the agent product via CIM
-      (Win32_Product) and removes it with Invoke-CimMethod, falling
-      back to msiexec /x if needed.
+    - Otherwise, the function locates the agent product in the Windows registry
+      (both 32-bit and 64-bit hives) and removes it with msiexec /x using the
+      product GUID.
 
     After uninstalling, the function stops and deletes the agent Windows service
-    and removes the installation directory.
+    and removes the installation directory. A post-uninstall check verifies that
+    the registry entry, service, and install folder are all gone.
 
 .PARAMETER InstallerPath
     Full path to the LiongardAgentInstaller .exe used for the original
@@ -31,46 +32,51 @@ function Uninstall-LiongardAgent {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([void])]
     param(
+        [ValidateScript({ -not $_ -or (Test-Path $_ -PathType Leaf) })]
         [string]$InstallerPath
     )
 
-    $agentServiceName    = "roaragent.exe"
-    $liongardInstallPath = "C:\Program Files (x86)\LiongardInc"
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Uninstall-LiongardAgent requires Administrator privileges."
+    }
 
     Write-LiongardLog "Uninstalling Liongard Agent..."
 
     if ($InstallerPath) {
-        $liongardProduct = Get-CimInstance -ClassName Win32_Product | Where-Object { $_.Name -like "*Liongard*Agent*" }
-        $npcapInstalled  = Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-            Where-Object { $_.DisplayName -like "*Npcap*" }
+        $liongardProduct = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "*Liongard*Agent*" } |
+            Select-Object -First 1
+        $npcapBefore = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "*Npcap*" } |
+            Select-Object -First 1
 
         if ($liongardProduct) {
-            Write-LiongardLog "Found: $($liongardProduct.Name) v$($liongardProduct.Version)"
-            if ($PSCmdlet.ShouldProcess($liongardProduct.Name, "Uninstall via EXE installer")) {
-                $process = Start-Process -FilePath $InstallerPath -ArgumentList "/uninstall /quiet" -Wait -PassThru -NoNewWindow
-                if ($process.ExitCode -eq 0) {
-                    Write-LiongardLog "Uninstalled: $($liongardProduct.Name)" "SUCCESS"
-                } else {
-                    Write-LiongardLog "Uninstall exit code: $($process.ExitCode)" "WARNING"
-                }
-                Start-Sleep -Seconds 5
-            }
+            Write-LiongardLog "Found: $($liongardProduct.DisplayName) v$($liongardProduct.DisplayVersion)"
         }
 
-        if ($npcapInstalled) {
-            $stillInstalled = Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-                Where-Object { $_.DisplayName -like "*Npcap*" }
-            if ($stillInstalled) {
-                Write-LiongardLog "$($stillInstalled.DisplayName) is still installed" "WARNING"
+        $target = if ($liongardProduct) { $liongardProduct.DisplayName } else { "Liongard Agent" }
+        if ($PSCmdlet.ShouldProcess($target, "Uninstall via EXE installer")) {
+            $process = Start-Process -FilePath $InstallerPath -ArgumentList "/uninstall /quiet" -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode -eq 0) {
+                Write-LiongardLog "Uninstalled: $target" "SUCCESS"
             } else {
-                Write-LiongardLog "Uninstalled: $($npcapInstalled.DisplayName)" "SUCCESS"
+                Write-LiongardLog "Uninstall exit code: $($process.ExitCode)" "WARNING"
+            }
+            Start-Sleep -Seconds 5
+        }
+
+        if ($npcapBefore) {
+            $npcapAfter = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
+                Where-Object { $_.DisplayName -like "*Npcap*" } |
+                Select-Object -First 1
+            if ($npcapAfter) {
+                Write-LiongardLog "$($npcapAfter.DisplayName) is still installed" "WARNING"
+            } else {
+                Write-LiongardLog "Uninstalled: $($npcapBefore.DisplayName)" "SUCCESS"
             }
         }
 
-        $vcRedist = Get-ItemProperty `
-            HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*, `
-            HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* `
-            -ErrorAction SilentlyContinue |
+        $vcRedist = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "Microsoft Visual C++*Redistributable*x86*" -and $_.DisplayVersion } |
             Sort-Object DisplayVersion -Descending |
             Select-Object -First 1
@@ -82,43 +88,28 @@ function Uninstall-LiongardAgent {
         }
     }
     else {
-        $product = Get-CimInstance -ClassName Win32_Product | Where-Object { $_.Name -like "*Liongard*Agent*" }
+        $products = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "*Liongard*Agent*" } |
+            Sort-Object PSChildName -Unique
 
-        if ($product) {
-            Write-LiongardLog "Found: $($product.Name) v$($product.Version)"
-            if ($PSCmdlet.ShouldProcess($product.Name, "Uninstall via CIM")) {
-                $result = Invoke-CimMethod -InputObject $product -MethodName 'Uninstall'
-                if ($result.ReturnValue -eq 0) {
-                    Write-LiongardLog "Agent uninstalled successfully" "SUCCESS"
-                } else {
-                    Write-LiongardLog "Uninstall returned code: $($result.ReturnValue)" "WARNING"
-                }
-                Start-Sleep -Seconds 5
-            }
-        } else {
-            Write-LiongardLog "No Liongard Agent MSI product found" "WARNING"
-        }
-
-        $installedProducts = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-            Where-Object { $_.DisplayName -like "*Liongard*Agent*" }
-
-        if ($installedProducts) {
-            foreach ($prod in $installedProducts) {
-                Write-LiongardLog "Uninstalling via msiexec: $($prod.DisplayName)"
+        if ($products) {
+            foreach ($prod in $products) {
+                Write-LiongardLog "Found: $($prod.DisplayName) v$($prod.DisplayVersion)"
                 if ($PSCmdlet.ShouldProcess($prod.DisplayName, "Uninstall via msiexec")) {
                     $process = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $($prod.PSChildName) /qn /norestart" -Wait -PassThru -NoNewWindow
                     if ($process.ExitCode -eq 0) {
-                        Write-LiongardLog "Uninstalled successfully" "SUCCESS"
+                        Write-LiongardLog "Uninstalled: $($prod.DisplayName)" "SUCCESS"
                     } else {
                         Write-LiongardLog "Uninstall exit code: $($process.ExitCode)" "WARNING"
                     }
                     Start-Sleep -Seconds 5
                 }
             }
+        } else {
+            Write-LiongardLog "No Liongard Agent product found" "WARNING"
         }
     }
 
-    # Common cleanup
     $service = Get-Service -Name $agentServiceName -ErrorAction SilentlyContinue
     if ($service) {
         Write-LiongardLog "Stopping service: $agentServiceName"
@@ -142,5 +133,24 @@ function Uninstall-LiongardAgent {
         }
     }
 
-    Start-Sleep -Seconds 3
+    $remaining = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like "*Liongard*Agent*" }
+    if ($remaining) {
+        Write-LiongardLog "Agent product still found in registry after uninstall" "WARNING"
+    } else {
+        Write-LiongardLog "Agent product removed from registry" "SUCCESS"
+    }
+
+    $serviceCheck = Get-Service -Name $agentServiceName -ErrorAction SilentlyContinue
+    if ($serviceCheck) {
+        Write-LiongardLog "Service still exists: $agentServiceName" "WARNING"
+    } else {
+        Write-LiongardLog "Service removed: $agentServiceName" "SUCCESS"
+    }
+
+    if (Test-Path $liongardInstallPath) {
+        Write-LiongardLog "Installation folder still exists: $liongardInstallPath" "WARNING"
+    } else {
+        Write-LiongardLog "Installation folder removed" "SUCCESS"
+    }
 }

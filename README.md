@@ -36,6 +36,33 @@ Get-Command -Module PSLiongard
 
 ---
 
+## Repo layout
+
+```
+psliongard/
+├── PSLiongard.psd1          # Module manifest
+├── PSLiongard.psm1          # Module loader (dot-sources Private/ + Public/)
+├── Private/                 # Internal helpers — NOT exported
+│   └── Invoke-LiongardApi.ps1
+├── Public/                  # Exported functions — one file per function
+│   ├── Write-LiongardLog.ps1
+│   ├── Get-LiongardAgent.ps1
+│   ├── Remove-LiongardAgent.ps1
+│   ├── New-LiongardEnvironment.ps1
+│   ├── New-LiongardAccessToken.ps1
+│   ├── Install-LiongardAgent.ps1
+│   ├── Uninstall-LiongardAgent.ps1
+│   ├── Install-Cosign.ps1
+│   ├── Test-LiongardAgentHeartbeat.ps1
+│   ├── Test-LiongardHeartbeatLog.ps1
+│   └── Test-LiongardScheduledTask.ps1
+└── Scripts/                 # Standalone scripts that import the module automatically
+    ├── Download-LiongardAgentInstaller.ps1
+    └── Test-AgentInstallation.ps1
+```
+
+---
+
 ## Running Scripts
 
 Scripts live in `Scripts/` and import the module automatically. Run them from the repo root or with their full path.
@@ -143,24 +170,30 @@ Available tasks:
 
 | Task | Description |
 |---|---|
+| `task install:deps` | Install all development dependencies (one-time setup) |
 | `task lint` | Run PSScriptAnalyzer against all module source files |
 | `task validate` | Validate the module can be imported and list its commands |
+| `task docs` | Generate per-function markdown docs from comment-based help |
 | `task unblock` | Unblock all files after cloning (Windows only) |
 
-Run `task --list` to see all tasks with descriptions.
+Run `task --list` to see all tasks with descriptions. Pass `--force` to reinstall dependencies that are already present.
 
 ### Pre-commit hooks
 
-[pre-commit](https://pre-commit.com) runs PSScriptAnalyzer automatically before each commit. It is cross-platform (macOS, Linux, Windows).
+[pre-commit](https://pre-commit.com) runs PSScriptAnalyzer and [gitleaks](https://github.com/gitleaks/gitleaks) (secrets detection) automatically before each commit. It is installed automatically by `task install:deps`.
 
-**One-time setup:**
+To install the hook manually or on a platform without Task:
 
 ```bash
-# Install pre-commit
-pip install pre-commit        # all platforms
-# or: brew install pre-commit  # macOS
+# macOS / Linux (via Homebrew)
+brew install pre-commit
 
-# Install the git hook
+# Windows (via uv)
+winget install astral-sh.uv
+uv tool install pre-commit
+uv tool update-shell
+
+# Install the git hook (all platforms)
 pre-commit install
 ```
 

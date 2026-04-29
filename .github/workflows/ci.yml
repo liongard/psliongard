@@ -10,6 +10,8 @@ jobs:
   lint-and-validate:
     name: Lint and validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -18,9 +20,9 @@ jobs:
         uses: arduino/setup-task@v2
 
       - name: Install Dependencies
-        run: task install:deps
+        run: task install:deps -y
 
-      - name: Validate module
+      - name: Validate PSLiongard
         run: task validate
 
       - name: Lint
