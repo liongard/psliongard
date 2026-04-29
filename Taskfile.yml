@@ -20,7 +20,7 @@ tasks:
       - sh: 'if "%CI%"=="true" exit 1'
         msg: "test:agent cannot run in CI"
     cmds:
-      - pwsh -NoProfile -NonInteractive -Command ".\Scripts\Test-AgentInstallation.ps1 -LiongardURL $env:LIONGARD_URL -AdminApiKey $env:LIONGARD_ACCESS_KEY -AdminApiSecret $env:LIONGARD_ACCESS_SECRET -Version $env:LIONGARD_AGENT_VERSION"
+      - pwsh -NoProfile -NonInteractive -Command ".\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL $env:LIONGARD_URL -AdminApiKey $env:LIONGARD_ACCESS_KEY -AdminApiSecret $env:LIONGARD_ACCESS_SECRET -Version $env:LIONGARD_AGENT_VERSION"
 
   lint:
     desc: Run PSScriptAnalyzer against the module source

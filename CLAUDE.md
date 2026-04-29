@@ -1,6 +1,6 @@
-# liongard-powershell
+# psliongard
 
-PowerShell tooling for Liongard Agent lifecycle management.
+The PSLiongard module contains the collection of scripts, tools and common code used to power the automation, configuration and deployment operations of the Liongard platform.
 
 ## Repo layout
 
@@ -22,10 +22,15 @@ liongard-powershell/
 │   ├── Test-LiongardAgentHeartbeat.ps1
 │   ├── Test-LiongardHeartbeatLog.ps1
 │   └── Test-LiongardScheduledTask.ps1
-└── Scripts/               # Standalone scripts that Import-Module PSLiongard
-    ├── Download-LiongardAgentInstaller.ps1
-    ├── Install-LiongardAgent.ps1
-    └── Test-AgentInstallation.ps1
+├── Scripts/               # Standalone operational scripts
+│   ├── Download-LiongardAgentInstaller.ps1
+│   └── Install-LiongardAgent.ps1
+└── Tests/                 # Test files (*.Tests.ps1 – Pester-compatible)
+    ├── Agent/
+    │   └── Install-LiongardAgent.Tests.ps1   # Integration: agent install scenarios
+    └── Unit/                                  # Pester unit tests for public functions
+        ├── Get-LiongardAgent.Tests.ps1        # Example: mocking Invoke-LiongardApi, v1/v2 fallback
+        └── Write-LiongardLog.Tests.ps1        # Example: mocking Write-Host inside module scope
 ```
 
 ## Module conventions
@@ -65,7 +70,7 @@ Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
     -AgentTokenKey           "key" -AgentTokenSecret "secret" `
     -IncludeEnvironmentValue $false
 
-# Install with Network IQ support (installs Npcap)
+# Install with NetworkIQ components
 .\Scripts\Install-LiongardAgent.ps1 `
     -InstancePrefix   us1 `
     -ApiTokenKey      "key" -ApiTokenSecret   "secret" `
@@ -84,27 +89,6 @@ Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
 # Download without signature validation
 .\Scripts\Download-LiongardAgentInstaller.ps1 -Version "5.3.0" -ValidateSignature $false
 
-# Run installation tests – auto-downloads the specified version (default behavior)
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "key" -AdminApiSecret "secret" `
-    -Version "5.3.0"
-
-# Run installation tests with a pre-downloaded MSI
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "key" -AdminApiSecret "secret" `
-    -DownloadAgent $false `
-    -MSIPath "C:\LiongardAgent.msi"
-
-# Run installation tests with a pre-created access token and environment
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "key" -AdminApiSecret "secret" `
-    -Version "5.3.0" `
-    -AccessKey "token-key" -AccessSecret "token-secret" `
-    -TestEnvironmentName "ExistingEnvironment" `
-    -SkipEnvironmentCreation -SkipTokenCreation
 ```
 
 ## Verify module loads correctly

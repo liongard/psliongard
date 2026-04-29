@@ -10,6 +10,11 @@
     - Scenario 4: Not defining an environment and adding a new custom Agent name
     - Scenario 5: NetworkIQ install (EXE installer only)
 
+    Recommended: run via Task using a .env file rather than passing credentials
+    directly. Copy .env.example to .env (or .env.<instance> for named instances),
+    fill in LIONGARD_URL, LIONGARD_ACCESS_KEY, LIONGARD_ACCESS_SECRET, and
+    LIONGARD_AGENT_VERSION, then run: task test:agent
+
 .PARAMETER LiongardURL
     The Liongard instance URL (e.g., "us1.app.liongard.com")
 
@@ -40,20 +45,14 @@
 .PARAMETER SkipTokenCreation
     Skip token creation and use provided AccessKey/AccessSecret.
 
-.PARAMETER CleanupAllAgents
-    Delete all existing agents from the platform before running tests.
+.EXAMPLE
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi"
 
 .EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi"
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe"
 
 .EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe"
-
-.EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -AccessKey "token-key" -AccessSecret "token-secret" -TestEnvironmentName "ExistingEnv"
-
-.EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -CleanupAllAgents
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -AccessKey "token-key" -AccessSecret "token-secret" -TestEnvironmentName "ExistingEnv"
 #>
 
 [CmdletBinding()]
@@ -99,12 +98,9 @@ param(
 
     [Parameter(Mandatory=$false)]
     [switch]$SkipTokenCreation = $false,
-
-    [Parameter(Mandatory=$false)]
-    [switch]$CleanupAllAgents = $false
 )
 
-Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
+Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -308,7 +304,7 @@ if ($DownloadAgent) {
     if ($PreviewGuid) { $downloadParams.PreviewGuid = $PreviewGuid }
 
     try {
-        & "$PSScriptRoot\Download-LiongardAgentInstaller.ps1" @downloadParams
+        & "$PSScriptRoot\..\..\Scripts\Download-LiongardAgentInstaller.ps1" @downloadParams
     } catch {
         Write-LiongardLog "ERROR: Agent download failed: $($_.Exception.Message)" "ERROR"
         exit 1
@@ -348,13 +344,6 @@ if ($MSIPath) {
 $apiParams = @{ LiongardURL = $LiongardURL; ApiKey = $AdminApiKey; ApiSecret = $AdminApiSecret }
 
 Write-LiongardLog "Step 1: Cleaning up existing agents and installations..."
-
-if ($CleanupAllAgents) {
-    Write-LiongardLog "WARNING: Deleting ALL existing agents from platform..." "WARNING"
-    Remove-LiongardAgent @apiParams -All
-} else {
-    Write-LiongardLog "Skipping platform agent cleanup. Use -CleanupAllAgents to delete all agents before testing."
-}
 
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
 

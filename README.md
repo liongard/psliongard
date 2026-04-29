@@ -56,9 +56,15 @@ psliongard/
 │   ├── Test-LiongardAgentHeartbeat.ps1
 │   ├── Test-LiongardHeartbeatLog.ps1
 │   └── Test-LiongardScheduledTask.ps1
-└── Scripts/                 # Standalone scripts that import the module automatically
-    ├── Download-LiongardAgentInstaller.ps1
-    └── Test-AgentInstallation.ps1
+├── Scripts/                 # Standalone operational scripts
+│   ├── Download-LiongardAgentInstaller.ps1
+│   └── Install-LiongardAgent.ps1
+└── Tests/                   # Test files (*.Tests.ps1 – Pester-compatible)
+    ├── Agent/
+    │   └── Install-LiongardAgent.Tests.ps1   # Integration: agent install scenarios
+    └── Unit/                                  # Pester unit tests for public functions
+        ├── Get-LiongardAgent.Tests.ps1        # Example: mocking Invoke-LiongardApi, v1/v2 fallback
+        └── Write-LiongardLog.Tests.ps1        # Example: mocking Write-Host inside module scope
 ```
 
 ---
@@ -97,63 +103,6 @@ Downloads the Liongard Agent installer and verifies its integrity. For versions 
 
 ---
 
-### Test-AgentInstallation.ps1
-
-Runs four end-to-end installation scenarios against a live Liongard instance. Requires Administrator rights.
-
-By default the script downloads the specified agent version automatically before running tests. Pass `-DownloadAgent $false` to supply your own installer.
-
-```powershell
-# Download and test version 5.3.0
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "your-key" -AdminApiSecret "your-secret" `
-    -Version "5.3.0"
-
-# Test using a pre-downloaded MSI
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "your-key" -AdminApiSecret "your-secret" `
-    -DownloadAgent $false `
-    -MSIPath "C:\LiongardAgent.msi"
-
-# Skip environment and token creation (use existing)
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "your-key" -AdminApiSecret "your-secret" `
-    -Version "5.3.0" `
-    -TestEnvironmentName "MyEnvironment" `
-    -AccessKey "token-key" -AccessSecret "token-secret" `
-    -SkipEnvironmentCreation -SkipTokenCreation
-
-# Delete all existing agents from the platform before testing
-.\Scripts\Test-AgentInstallation.ps1 `
-    -LiongardURL "us1.app.liongard.com" `
-    -AdminApiKey "your-key" -AdminApiSecret "your-secret" `
-    -Version "5.3.0" `
-    -CleanupAllAgents
-```
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `-LiongardURL` | `[string]` | required | Liongard instance URL (e.g. `us1.app.liongard.com`) |
-| `-AdminApiKey` | `[string]` | required | API key for admin operations |
-| `-AdminApiSecret` | `[string]` | required | API secret for admin operations |
-| `-DownloadAgent` | `[bool]` | `$true` | Download the agent installer before testing |
-| `-Version` | `[Version]` | | Agent version to download (required when `-DownloadAgent $true`) |
-| `-UseMsi` | `[switch]` | `$false` | Download and install the MSI instead of the .exe installer |
-| `-PreviewGuid` | `[Guid]` | | GUID for preview build download URLs |
-| `-MSIPath` | `[string]` | | Path to a pre-downloaded MSI (used when `-DownloadAgent $false`) |
-| `-InstallerPath` | `[string]` | | Path to a pre-downloaded .exe installer (used when `-DownloadAgent $false`) |
-| `-TestEnvironmentName` | `[string]` | auto | Name of the test environment |
-| `-AccessKey` | `[string]` | | Pre-created Agent Install Token access key |
-| `-AccessSecret` | `[string]` | | Pre-created Agent Install Token access secret |
-| `-SkipEnvironmentCreation` | `[switch]` | `$false` | Use `-TestEnvironmentName` as-is without creating it |
-| `-SkipTokenCreation` | `[switch]` | `$false` | Use `-AccessKey`/`-AccessSecret` without creating a new token |
-| `-CleanupAllAgents` | `[switch]` | `$false` | Delete all existing agents from the platform before running tests |
-
----
-
 ## Development
 
 ### Task runner
@@ -173,7 +122,7 @@ Available tasks:
 | `task install:deps` | Install all development dependencies (one-time setup) |
 | `task lint` | Run PSScriptAnalyzer against all module source files |
 | `task validate` | Validate the module can be imported and list its commands |
-| `task docs` | Generate per-function markdown docs from comment-based help |
+| `task test:agent` | Run agent installation test suite against a live instance (Windows, requires `.env`) |
 | `task unblock` | Unblock all files after cloning (Windows only) |
 
 Run `task --list` to see all tasks with descriptions. Pass `--force` to reinstall dependencies that are already present.
@@ -212,8 +161,8 @@ The module exposes these functions after `Import-Module .\PSLiongard.psd1`:
 | Function | Description |
 |---|---|
 | `Write-LiongardLog` | Timestamped, colour-coded console logging |
-| `Get-LiongardAgent` | Look up an agent by `-Name`, `-ID`, or `-NamePattern` |
-| `Remove-LiongardAgent` | Delete an agent by `-AgentID`, `-AgentName`, or `-All` |
+| `Get-LiongardAgent` | Look up an agent by `-Name`, `-ID`, `-NamePattern`, or `-Conditions` |
+| `Remove-LiongardAgent` | Delete an agent by `-AgentID` or `-AgentName` |
 | `New-LiongardEnvironment` | Create an environment on the platform |
 | `New-LiongardAccessToken` | Create an Agent Install Token |
 | `Install-LiongardAgent` | Install the agent via MSI or .exe installer |
