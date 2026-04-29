@@ -35,10 +35,18 @@ A maintainer from `@github-maint` will review your PR. All PRs require at least 
 ## Development setup
 
 ```bash
-# Install dependencies (macOS)
+# macOS / Linux
 brew install go-task
 task install:deps
 
+# Windows
+winget install Task.Task
+task install:deps
+```
+
+Re-run with `task install:deps --force` to reinstall dependencies already present.
+
+```bash
 # Lint
 task lint
 

@@ -12,11 +12,11 @@ repos:
           - "Invoke-ScriptAnalyzer **/*.ps1 -Settings ./PSScriptAnalyzerSettings.psd1 -Recurse -EnableExit"
         pass_filenames: false
         files: \.(ps1|psm1|psd1)$
+
       - id: psmoduleimport
         name: PSModuleImport
         language: system
         entry: pwsh
-        phases: ["pre-push"]
         args:
           - -NoProfile
           - -NonInteractive
@@ -24,3 +24,8 @@ repos:
           - "Import-Module .\PSLiongard.psd1 -Force; Get-Command -Module PSLiongard"
         pass_filenames: false
         files: \.(ps1|psm1|psd1)$
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
