@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in this project, please **do not** open a public GitHub issue. Instead, report it privately:
 
-**Email:** security@liongard.com
+**Email:** security.ops@liongard.com
 
 Please include:
 - A description of the vulnerability and its potential impact
