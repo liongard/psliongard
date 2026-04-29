@@ -3,15 +3,13 @@ BeforeAll {
     Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force
 }
 
-Describe "Get-LiongardAgent" {
-    BeforeAll {
-        $commonParams = @{
-            LiongardURL = 'test.app.liongard.com'
-            ApiKey      = 'key'
-            ApiSecret   = 'secret'
-        }
-    }
+$commonParams = @{
+    LiongardURL = 'test.app.liongard.com'
+    ApiKey      = 'key'
+    ApiSecret   = 'secret'
+}
 
+Describe "Get-LiongardAgent" {
     Context "ByName - successful v1 lookup" {
         BeforeEach {
             Mock Invoke-LiongardApi -ModuleName PSLiongard -MockWith {
