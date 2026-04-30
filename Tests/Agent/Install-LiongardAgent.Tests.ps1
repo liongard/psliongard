@@ -97,7 +97,7 @@ param(
     [switch]$SkipEnvironmentCreation = $false,
 
     [Parameter(Mandatory=$false)]
-    [switch]$SkipTokenCreation = $false,
+    [switch]$SkipTokenCreation = $false
 )
 
 Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force

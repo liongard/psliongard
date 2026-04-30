@@ -1,7 +1,7 @@
 version: '3'
 
 tasks:
-  test:agent:install:
+  test:agent:
     desc: Run agent installation test scenarios against a Liongard instance
     summary: |
       Runs Test-AgentInstallation.ps1 using credentials from a local .env file.
@@ -14,7 +14,7 @@ tasks:
         LIONGARD_AGENT_VERSION  - agent version to download and test (e.g. 5.3.0)
 
       Must be run in an Administrator PowerShell session on Windows.
-    dotenv: ['.env']
+    dotenv: ['.env','.env.*']
     platforms: [windows]
     preconditions:
       - sh: 'if "%CI%"=="true" exit 1'
@@ -142,8 +142,10 @@ tasks:
     cmds:
       - cmd: |
          uv tool install pre-commit
-         pre-commit install
+         uv tool pre-commit install
+         uv tool update-shell
         platforms: [windows]
+
       - cmd: |
          PATH="{{.HOMEBREW_PATH}}:$PATH" brew install pre-commit
          PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install

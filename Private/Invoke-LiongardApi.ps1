@@ -27,7 +27,7 @@ function Invoke-LiongardApi {
     }
 
     $uri         = "$baseUrl$Endpoint"
-    $credentials = "$ApiKey`:$ApiSecret"
+    $credentials = '{0}:{1}' -f $ApiKey, $ApiSecret
     $bytes       = [System.Text.Encoding]::UTF8.GetBytes($credentials)
     $base64Key   = [System.Convert]::ToBase64String($bytes)
 
