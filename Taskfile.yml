@@ -14,13 +14,15 @@ tasks:
         LIONGARD_AGENT_VERSION  - agent version to download and test (e.g. 5.3.0)
 
       Must be run in an Administrator PowerShell session on Windows.
-    dotenv: ['.env','.env.*']
-    platforms: [windows]
-    preconditions:
-      - sh: 'if "%CI%"=="true" exit 1'
-        msg: "test:agent cannot run in CI"
-    cmds:
-      - pwsh -NoProfile -NonInteractive -Command ".\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL $env:LIONGARD_URL -AdminApiKey $env:LIONGARD_ACCESS_KEY -AdminApiSecret $env:LIONGARD_ACCESS_SECRET -Version $env:LIONGARD_AGENT_VERSION"
+    dotenv: ['.env','.env.test']
+    platforms: [windows, linux]
+    cmd: |
+     pwsh -NoProfile -NonInteractive -Command \
+      ".\Tests\Agent\Install-LiongardAgent.Tests.ps1" \
+      -LiongardURL "$LIONGARD_URL" \
+      -AdminApiKey "$LIONGARD_ACCESS_KEY" \
+      -AdminApiSecret "$LIONGARD_ACCESS_SECRET" \
+      -Version "$LIONGARD_AGENT_VERSION"
 
   lint:
     desc: Run PSScriptAnalyzer against the module source
@@ -142,7 +144,7 @@ tasks:
     cmds:
       - cmd: |
          uv tool install pre-commit
-         uv tool pre-commit install
+         uv tool run pre-commit install
          uv tool update-shell
         platforms: [windows]
 
