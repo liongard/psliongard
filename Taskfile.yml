@@ -14,7 +14,7 @@ tasks:
         LIONGARD_AGENT_VERSION  - agent version to download and test (e.g. 5.3.0)
 
       Must be run in an Administrator PowerShell session on Windows.
-    dotenv: ['.env','.env.test']
+    dotenv: ['.env']
     platforms: [windows, linux]
     cmd: |
      pwsh -NoProfile -NonInteractive -Command \
@@ -130,8 +130,8 @@ tasks:
     platforms: [windows]
     if: powershell -NonInteractive -Command "-not $(Get-Command winget)"
     cmds:
-      - powershell -NonInteractive -Command "Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing"
-      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid [(Get-AuthenticodeSignature winget.msixbundle).Status]\" }"
+      - powershell -NonInteractive -Command "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile winget.msixbundle -UseBasicParsing"
+      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid [($(Get-AuthenticodeSignature winget.msixbundle).Status)]\" }"
       - powershell -NonInteractive -Command "Add-AppxPackage winget.msixbundle; Remove-Item winget.msixbundle"
 
   install:pre-commit:
