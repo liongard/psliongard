@@ -141,16 +141,23 @@ tasks:
       Requires pre-commit (to install: 'pip install pre-commit' or 'brew install pre-commit')
     sources:
       - .pre-commit-config.yaml
+    vars:
+      BUILD_HASH:
+        sh: git rev-parse --short=7 HEAD || echo ""
     cmds:
       - cmd: |
          uv tool install pre-commit
-         uv tool run pre-commit install
+         if [ "{{.BUILD_HASH}}" ]; then
+           uv tool run pre-commit install
+         fi
          uv tool update-shell
         platforms: [windows]
 
       - cmd: |
          PATH="{{.HOMEBREW_PATH}}:$PATH" brew install pre-commit
-         PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install
+         if [ "{{.BUILD_HASH}}" ]; then
+           PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install
+         fi
         platforms: [darwin, linux]
 
   unblock:run:
