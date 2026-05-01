@@ -82,24 +82,26 @@ function New-LiongardAccessToken {
     Write-LiongardLog "Successfully created access token: $TokenName" "SUCCESS"
     $tokenData = $result.Data
 
-    # Normalize AccessKeyID across API versions that return different property names
-    if ($tokenData.PSObject.Properties['AccessKeyId'] -and -not $tokenData.PSObject.Properties['AccessKeyID']) {
-        $tokenData | Add-Member -NotePropertyName 'AccessKeyID' -NotePropertyValue $tokenData.AccessKeyId -Force
-    } elseif ($tokenData.PSObject.Properties['Key'] -and -not $tokenData.PSObject.Properties['AccessKeyID']) {
-        $tokenData | Add-Member -NotePropertyName 'AccessKeyID' -NotePropertyValue $tokenData.Key -Force
-    } elseif ($tokenData.PSObject.Properties['AccessKey'] -and -not $tokenData.PSObject.Properties['AccessKeyID']) {
-        $tokenData | Add-Member -NotePropertyName 'AccessKeyID' -NotePropertyValue $tokenData.AccessKey -Force
-    } elseif ($tokenData.PSObject.Properties['ID'] -and -not $tokenData.PSObject.Properties['AccessKeyID']) {
-        $tokenData | Add-Member -NotePropertyName 'AccessKeyID' -NotePropertyValue $tokenData.ID -Force
+    # Normalize AccessKeyID: PSObject.Properties lookups are case-insensitive, so checking
+    # Properties['AccessKeyID'] would find the API's 'AccessKeyId' and prevent normalization.
+    # Use direct value access instead and always write the canonical uppercase-D name.
+    $normalizedKeyId = $tokenData.AccessKeyId
+    if (-not $normalizedKeyId) { $normalizedKeyId = $tokenData.Key }
+    if (-not $normalizedKeyId) { $normalizedKeyId = $tokenData.AccessKey }
+    if (-not $normalizedKeyId) { $normalizedKeyId = $tokenData.ID }
+    if ($normalizedKeyId) {
+        $tokenData | Add-Member -NotePropertyName 'AccessKeyID' -NotePropertyValue $normalizedKeyId -Force
     }
 
-    # Normalize Secret across API versions
-    if ($tokenData.PSObject.Properties['AccessKeySecret'] -and -not $tokenData.PSObject.Properties['Secret']) {
-        $tokenData | Add-Member -NotePropertyName 'Secret' -NotePropertyValue $tokenData.AccessKeySecret -Force
-    } elseif ($tokenData.PSObject.Properties['SecretAccessKey'] -and -not $tokenData.PSObject.Properties['Secret']) {
-        $tokenData | Add-Member -NotePropertyName 'Secret' -NotePropertyValue $tokenData.SecretAccessKey -Force
-    } elseif ($tokenData.PSObject.Properties['SecretKey'] -and -not $tokenData.PSObject.Properties['Secret']) {
-        $tokenData | Add-Member -NotePropertyName 'Secret' -NotePropertyValue $tokenData.SecretKey -Force
+    # Normalize Secret: the API may return a null 'Secret' field alongside a populated
+    # 'AccessKeySecret'. Checking Properties['Secret'] returns a truthy PSPropertyInfo even
+    # for a null value, blocking normalization. Resolve by value with AccessKeySecret first.
+    $normalizedSecret = $tokenData.AccessKeySecret
+    if (-not $normalizedSecret) { $normalizedSecret = $tokenData.SecretAccessKey }
+    if (-not $normalizedSecret) { $normalizedSecret = $tokenData.SecretKey }
+    if (-not $normalizedSecret) { $normalizedSecret = $tokenData.Secret }
+    if ($normalizedSecret) {
+        $tokenData | Add-Member -NotePropertyName 'Secret' -NotePropertyValue $normalizedSecret -Force
     }
 
     return $tokenData

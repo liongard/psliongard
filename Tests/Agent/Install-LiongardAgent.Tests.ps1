@@ -3,11 +3,17 @@
     Tests Liongard Agent installation scenarios on Windows.
 
 .DESCRIPTION
-    Tests four installation scenarios for the Liongard Agent:
+    Tests five installation scenarios for the Liongard Agent:
     - Scenario 1: Defining an environment and leaving default Agent name
     - Scenario 2: Defining an environment and adding a new custom Agent name
     - Scenario 3: Not defining an environment and leaving default Agent name
     - Scenario 4: Not defining an environment and adding a new custom Agent name
+    - Scenario 5: NetworkIQ install (EXE installer only)
+
+    Recommended: run via Task using a .env file rather than passing credentials
+    directly. Copy .env.example to .env (or .env.<instance> for named instances),
+    fill in LIONGARD_URL, LIONGARD_ACCESS_KEY, LIONGARD_ACCESS_SECRET, and
+    LIONGARD_AGENT_VERSION, then run: task test:agent
 
 .PARAMETER LiongardURL
     The Liongard instance URL (e.g., "us1.app.liongard.com")
@@ -39,20 +45,14 @@
 .PARAMETER SkipTokenCreation
     Skip token creation and use provided AccessKey/AccessSecret.
 
-.PARAMETER CleanupAllAgents
-    Delete all existing agents from the platform before running tests.
+.EXAMPLE
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi"
 
 .EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi"
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe"
 
 .EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe"
-
-.EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -AccessKey "token-key" -AccessSecret "token-secret" -TestEnvironmentName "ExistingEnv"
-
-.EXAMPLE
-    .\Test-AgentInstallation.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -CleanupAllAgents
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -AccessKey "token-key" -AccessSecret "token-secret" -TestEnvironmentName "ExistingEnv"
 #>
 
 [CmdletBinding()]
@@ -97,13 +97,10 @@ param(
     [switch]$SkipEnvironmentCreation = $false,
 
     [Parameter(Mandatory=$false)]
-    [switch]$SkipTokenCreation = $false,
-
-    [Parameter(Mandatory=$false)]
-    [switch]$CleanupAllAgents = $false
+    [switch]$SkipTokenCreation = $false
 )
 
-Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
+Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -117,8 +114,9 @@ function Test-AgentInstallation {
         [string]$ScenarioName,
         [string]$AccessKey,
         [string]$AccessSecret,
-        [string]$Environment = $null,
-        [string]$AgentName   = $null
+        [string]$Environment     = $null,
+        [string]$AgentName       = $null,
+        [switch]$InstallNetworkIQ
     )
 
     Write-LiongardLog "========================================"
@@ -129,14 +127,18 @@ function Test-AgentInstallation {
 
     $apiParams = @{ LiongardURL = $LiongardURL; ApiKey = $AdminApiKey; ApiSecret = $AdminApiSecret }
 
-    $installSuccess = Install-LiongardAgent `
-        -LiongardURL   $LiongardURL `
-        -AccessKey     $AccessKey `
-        -AccessSecret  $AccessSecret `
-        -MSIPath       $MSIPath `
-        -InstallerPath $InstallerPath `
-        -Environment   $Environment `
-        -AgentName     $AgentName
+    $installParams = @{
+        LiongardURL   = $LiongardURL
+        AccessKey     = $AccessKey
+        AccessSecret  = $AccessSecret
+        MSIPath       = $MSIPath
+        InstallerPath = $InstallerPath
+        Environment   = $Environment
+        AgentName     = $AgentName
+    }
+    if ($InstallNetworkIQ) { $installParams.InstallNetworkIQ = $true }
+
+    $installSuccess = Install-LiongardAgent @installParams
 
     if (-not $installSuccess) {
         $script:TestResults += @{ Scenario = $ScenarioName; Status = "FAILED"; Reason = "Installation failed" }
@@ -199,6 +201,17 @@ function Test-AgentInstallation {
         Write-LiongardLog "Service is running" "SUCCESS"
     } else {
         Write-LiongardLog "Service is not running" "WARNING"
+    }
+
+    if ($InstallNetworkIQ) {
+        $npcapSvc = Get-Service -Name "npcap" -ErrorAction SilentlyContinue
+        if ($npcapSvc) {
+            Write-LiongardLog "Npcap service detected (status: $($npcapSvc.Status))" "SUCCESS"
+        } else {
+            Write-LiongardLog "Npcap service not found after NetworkIQ install" "ERROR"
+            $script:TestResults += @{ Scenario = $ScenarioName; Status = "FAILED"; Reason = "Npcap service not found"; AgentID = $agent.ID; AgentName = $agent.Name }
+            return @{ AgentID = $agent.ID; AgentName = $agent.Name }
+        }
     }
 
     Write-LiongardLog "Waiting for agent to send heartbeat..."
@@ -291,7 +304,7 @@ if ($DownloadAgent) {
     if ($PreviewGuid) { $downloadParams.PreviewGuid = $PreviewGuid }
 
     try {
-        & "$PSScriptRoot\Download-LiongardAgentInstaller.ps1" @downloadParams
+        & "$PSScriptRoot\..\..\Scripts\Download-LiongardAgentInstaller.ps1" @downloadParams
     } catch {
         Write-LiongardLog "ERROR: Agent download failed: $($_.Exception.Message)" "ERROR"
         exit 1
@@ -332,13 +345,6 @@ $apiParams = @{ LiongardURL = $LiongardURL; ApiKey = $AdminApiKey; ApiSecret = $
 
 Write-LiongardLog "Step 1: Cleaning up existing agents and installations..."
 
-if ($CleanupAllAgents) {
-    Write-LiongardLog "WARNING: Deleting ALL existing agents from platform..." "WARNING"
-    Remove-LiongardAgent @apiParams -All
-} else {
-    Write-LiongardLog "Skipping platform agent cleanup. Use -CleanupAllAgents to delete all agents before testing."
-}
-
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
 
 if (-not $SkipEnvironmentCreation) {
@@ -363,8 +369,8 @@ if (-not $SkipTokenCreation) {
             Write-LiongardLog "ERROR: Failed to create access token. Create one manually and provide via -AccessKey and -AccessSecret." "ERROR"
             exit 1
         }
-        $accessKey    = if ($token.AccessKeyID) { $token.AccessKeyID } elseif ($token.AccessKeyId) { $token.AccessKeyId } elseif ($token.Key) { $token.Key } else { $null }
-        $accessSecret = if ($token.Secret) { $token.Secret } elseif ($token.AccessKeySecret) { $token.AccessKeySecret } elseif ($token.SecretAccessKey) { $token.SecretAccessKey } else { $null }
+        $accessKey    = $token.AccessKeyID
+        $accessSecret = $token.Secret
 
         if (-not $accessKey -or -not $accessSecret) {
             Write-LiongardLog "ERROR: Token created but missing AccessKey or Secret. Response: $($token | ConvertTo-Json)" "ERROR"
@@ -387,10 +393,16 @@ Write-LiongardLog "========================================"
 Write-LiongardLog "Running Installation Test Scenarios"
 Write-LiongardLog "========================================"
 
+function Assert-Uninstalled {
+    $svc = Get-Service -Name "roaragent.exe" -ErrorAction SilentlyContinue
+    if ($svc) { Write-LiongardLog "WARNING: roaragent.exe service still present after uninstall" "WARNING" }
+}
+
 # Scenario 1: Environment + Default Agent Name
 $s1 = Test-AgentInstallation -ScenarioName "Scenario 1: Environment + Default Agent Name" `
     -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName -AgentName $null
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
+Assert-Uninstalled
 Remove-TestAgent $s1
 Start-Sleep -Seconds 5
 
@@ -399,6 +411,7 @@ $s2 = Test-AgentInstallation -ScenarioName "Scenario 2: Environment + Custom Age
     -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName `
     -AgentName "TestAgent-CustomName-$(Get-Date -Format 'HHmmss')"
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
+Assert-Uninstalled
 Remove-TestAgent $s2
 Start-Sleep -Seconds 5
 
@@ -406,6 +419,7 @@ Start-Sleep -Seconds 5
 $s3 = Test-AgentInstallation -ScenarioName "Scenario 3: No Environment + Default Agent Name" `
     -AccessKey $accessKey -AccessSecret $accessSecret -Environment $null -AgentName $null
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
+Assert-Uninstalled
 Remove-TestAgent $s3
 Start-Sleep -Seconds 5
 
@@ -414,25 +428,41 @@ $s4 = Test-AgentInstallation -ScenarioName "Scenario 4: No Environment + Custom 
     -AccessKey $accessKey -AccessSecret $accessSecret -Environment $null `
     -AgentName "TestAgent-CustomName2-$(Get-Date -Format 'HHmmss')"
 Uninstall-LiongardAgent -InstallerPath $InstallerPath
+Assert-Uninstalled
 Remove-TestAgent $s4
+Start-Sleep -Seconds 5
+
+# Scenario 5: NetworkIQ (EXE installer only - skipped when only MSIPath is provided)
+if ($InstallerPath) {
+    $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: NetworkIQ Install" `
+        -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName `
+        -AgentName $null -InstallNetworkIQ
+    Uninstall-LiongardAgent -InstallerPath $InstallerPath
+    Assert-Uninstalled
+    Remove-TestAgent $s5
+} else {
+    Write-LiongardLog "Scenario 5 (NetworkIQ) skipped: requires EXE installer (-InstallerPath)." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 5: NetworkIQ Install"; Status = "SKIPPED"; Reason = "No InstallerPath provided" }
+}
 
 # Results summary
 Write-LiongardLog "========================================"
 Write-LiongardLog "Test Results Summary"
 Write-LiongardLog "========================================"
 
-$passed = @($TestResults | Where-Object { $_.Status -eq "PASSED" }).Count
-$failed = @($TestResults | Where-Object { $_.Status -eq "FAILED" }).Count
+$passed  = @($TestResults | Where-Object { $_.Status -eq "PASSED" }).Count
+$failed  = @($TestResults | Where-Object { $_.Status -eq "FAILED" }).Count
+$skipped = @($TestResults | Where-Object { $_.Status -eq "SKIPPED" }).Count
 
 foreach ($result in $TestResults) {
-    $color = if ($result.Status -eq "PASSED") { "Green" } else { "Red" }
+    $color = switch ($result.Status) { "PASSED" { "Green" } "SKIPPED" { "Yellow" } default { "Red" } }
     Write-Host "$($result.Scenario): " -NoNewline
     Write-Host $result.Status -ForegroundColor $color
     if ($result.Reason)  { Write-Host "  Reason: $($result.Reason)"  -ForegroundColor "Yellow" }
     if ($result.AgentID) { Write-Host "  Agent ID: $($result.AgentID)" }
 }
 
-Write-LiongardLog "Total: $($TestResults.Count)  Passed: $passed  Failed: $failed"
+Write-LiongardLog "Total: $($TestResults.Count)  Passed: $passed  Failed: $failed  Skipped: $skipped"
 
 if ($failed -eq 0) {
     Write-LiongardLog "All tests PASSED!" "SUCCESS"

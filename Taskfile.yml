@@ -1,6 +1,29 @@
 version: '3'
 
 tasks:
+  test:agent:
+    desc: Run agent installation test scenarios against a Liongard instance
+    summary: |
+      Runs Test-AgentInstallation.ps1 using credentials from a local .env file.
+      Copy .env.example to .env and fill in the values before running.
+
+      Required .env variables:
+        LIONGARD_URL            - instance hostname (e.g. dev.app.liongard.com)
+        LIONGARD_ACCESS_KEY     - admin API key
+        LIONGARD_ACCESS_SECRET  - admin API secret
+        LIONGARD_AGENT_VERSION  - agent version to download and test (e.g. 5.3.0)
+
+      Must be run in an Administrator PowerShell session on Windows.
+    dotenv: ['.env']
+    platforms: [windows, linux]
+    cmd: |
+     pwsh -NoProfile -NonInteractive -Command \
+      ".\Tests\Agent\Install-LiongardAgent.Tests.ps1" \
+      -LiongardURL "$LIONGARD_URL" \
+      -AdminApiKey "$LIONGARD_ACCESS_KEY" \
+      -AdminApiSecret "$LIONGARD_ACCESS_SECRET" \
+      -Version "$LIONGARD_AGENT_VERSION"
+
   lint:
     desc: Run PSScriptAnalyzer against the module source
     summary: |
@@ -107,8 +130,8 @@ tasks:
     platforms: [windows]
     if: powershell -NonInteractive -Command "-not $(Get-Command winget)"
     cmds:
-      - powershell -NonInteractive -Command "Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile winget.msixbundle -UseBasicParsing"
-      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid [(Get-AuthenticodeSignature winget.msixbundle).Status]\" }"
+      - powershell -NonInteractive -Command "Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile winget.msixbundle -UseBasicParsing"
+      - powershell -NonInteractive -Command "if ((Get-AuthenticodeSignature winget.msixbundle).Status -ne 'Valid') { throw \"winget signature invalid [($(Get-AuthenticodeSignature winget.msixbundle).Status)]\" }"
       - powershell -NonInteractive -Command "Add-AppxPackage winget.msixbundle; Remove-Item winget.msixbundle"
 
   install:pre-commit:
@@ -121,8 +144,10 @@ tasks:
     cmds:
       - cmd: |
          uv tool install pre-commit
-         pre-commit install
+         uv tool run pre-commit install
+         uv tool update-shell
         platforms: [windows]
+
       - cmd: |
          PATH="{{.HOMEBREW_PATH}}:$PATH" brew install pre-commit
          PATH="{{.HOMEBREW_PATH}}:$PATH" pre-commit install

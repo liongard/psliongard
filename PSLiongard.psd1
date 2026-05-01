@@ -1,5 +1,5 @@
 @{
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.2.0'
     GUID                 = 'a3c5e7b9-d1f2-4a6c-8e0f-2b4d6c8a0e2f'
     Author               = 'Liongard'
     CompanyName          = 'Liongard, Inc.'
