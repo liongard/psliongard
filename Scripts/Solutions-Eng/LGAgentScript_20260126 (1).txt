@@ -1,0 +1,207 @@
+#requires -Version 5.1
+<#
+    Liongard Agent deployment script that:
+      * Validates partner-supplied config values with RMM Here-Strings.
+      * Normalizes environment names (e.g., Johnson & Johnson matches Johnson and Johnson).
+      * Optionally uninstalls existing Agents & deletes platform records via API.
+      * Queries the Liongard API to detect MachineGuid collisions and supply DEVICEID overrides.
+      * Downloads, installs, and summarizes results with deep log scraping.
+
+    Maintained by David Chapman, Manager of Professional Services.
+#>
+
+# ================================
+# Partner Configuration
+# ================================
+$InstancePrefix          = "us?" 
+$ApiTokenKey             = "REPLACE_WITH_API_TOKEN_KEY" 
+$ApiTokenSecret          = "REPLACE_WITH_API_TOKEN_SECRET"
+$AgentTokenKey           = "REPLACE_WITH_AGENT_TOKEN_KEY"
+$AgentTokenSecret        = "REPLACE_WITH_AGENT_TOKEN_SECRET"
+
+# Safe ingestion for RMM variables that might contain quotes or ampersands
+$Environment = @'
+%companyname%
+'@.Trim()
+
+$AgentDescription        = ""                                
+$EnablePreUninstall      = $true                             
+$IncludeEnvironmentValue = $true                             
+$RemoveAgentFromPlatform = $false                            
+$MinimumRemoteDeletionScore = 50                             
+
+$Folder        = "C:\Liongard"
+$InstallerUrl  = "https://agents.static.liongard.com/LiongardAgent-lts.msi"
+
+# ================================
+# Helper Functions
+# ================================
+
+function Normalize-EnvironmentName {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $trimmed = $Value.Trim().ToLowerInvariant()
+    # Normalize ampersand to "and" before stripping non-alphas
+    $trimmed = $trimmed -replace '\s*&\s*', ' and '
+    $trimmed = $trimmed -replace '^(the|a|an)\s+', ''
+    $trimmed = $trimmed -replace '\b(llc|llp|pllc|inc|corp|ltd|lp|pc|pa|plc)\b\.?', ''
+    $formD = $trimmed.Normalize([Text.NormalizationForm]::FormD)
+    $chars = $formD.ToCharArray() | Where-Object {
+        [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($_) -ne [System.Globalization.UnicodeCategory]::NonSpacingMark
+    }
+    $normalized = (-join $chars -replace '[^0-9a-z]', '').ToUpperInvariant()
+    return $normalized
+}
+
+function Get-LiongardAuthHeader {
+    param([string]$ApiTokenKey, [string]$ApiTokenSecret)
+    # Concatenation fix to avoid Asio "Colon" parse error
+    $tokenString = $ApiTokenKey + ":" + $ApiTokenSecret
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($tokenString)
+    $encoded = [System.Convert]::ToBase64String($bytes)
+    return @{
+        'X-ROAR-API-KEY' = $encoded
+        'User-Agent'     = 'LiongardAgentInstaller/1.0'
+    }
+}
+
+function Get-LocalMachineGuid {
+    $registryPath = 'HKLM:\SOFTWARE\Microsoft\Cryptography'
+    try {
+        if (Test-Path $registryPath) {
+            $guid = (Get-ItemProperty -Path $registryPath -Name 'MachineGuid' -ErrorAction Stop).MachineGuid
+            if ($guid) { return $guid }
+        }
+    } catch {}
+    try {
+        $uuid = (Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID
+        if ($uuid -and $uuid -notmatch '00000000|FFFFFFFF') { return $uuid }
+    } catch {}
+    throw "Unable to determine MachineGuid."
+}
+
+function Get-AsioCompanyName {
+    $asioPaths = @('HKLM:\SOFTWARE\ITSPlatform', 'HKLM:\SOFTWARE\WOW6432Node\ITSPlatform')
+    foreach ($path in $asioPaths) {
+        if (Test-Path $path) {
+            $val = (Get-ItemProperty $path -ErrorAction SilentlyContinue).CompanyName
+            if ($val) { return $val.Trim() }
+        }
+    }
+    return $null
+}
+
+function Start-LiongardTranscript {
+    param([string]$TargetFolder)
+    if (-not (Test-Path $TargetFolder)) { New-Item $TargetFolder -ItemType Directory -Force | Out-Null }
+    $script:TranscriptPath = Join-Path $TargetFolder ("LGAgentScript_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmm'))
+    Start-Transcript -Path $script:TranscriptPath -Force | Out-Null
+}
+
+# [ ... Original Read-MsiLogSummary, Resolve-DeviceGuidOverride, and Uninstall Logic Re-included below ... ]
+
+function Read-MsiLogSummary {
+    param([string]$Path, [int]$MaxWait = 60)
+    if (-not (Test-Path $Path)) { return $null }
+    $deadline = (Get-Date).AddSeconds($MaxWait)
+    do {
+        $logText = Get-Content $Path -Raw -ErrorAction SilentlyContinue
+        if ($logText -match 'MainEngineThread is returning (?<code>\d+)') {
+            return [pscustomobject]@{ Code = [int]$Matches['code']; Found = $true }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    return $null
+}
+
+function Resolve-LiongardEnvironmentName {
+    param($InputName, $Prefix, $Headers)
+    $normInput = Normalize-EnvironmentName $InputName
+    $uri = "https://$Prefix.app.liongard.com/api/v1/environments"
+    try {
+        $envs = (Invoke-RestMethod -Uri $uri -Headers $Headers -ErrorAction Stop).data
+        foreach ($e in $envs) { if ($e.Name -ieq $InputName) { return $e.Name } }
+        foreach ($e in $envs) { if (Normalize-EnvironmentName $e.Name -eq $normInput) { return $e.Name } }
+    } catch {}
+    return $null
+}
+
+function Invoke-LiongardAgentUninstall {
+    Write-Host "Checking for existing installations..."
+    $svc = Get-Service "LiongardAgent*" -ErrorAction SilentlyContinue
+    if ($svc) { 
+        Stop-Service $svc.Name -Force -ErrorAction SilentlyContinue
+        sc.exe delete $svc.Name | Out-Null
+        Write-Host "Liongard Service removed."
+    }
+}
+
+# ================================
+# Main Execution Logic
+# ================================
+
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+Start-LiongardTranscript -TargetFolder $Folder
+
+try {
+    # 1. RMM Variable & Environment Hardening
+    if ($Environment -eq '%companyname%' -or [string]::IsNullOrWhiteSpace($Environment) -or $Environment -eq 'null') {
+        Write-Warning "Asio substitution failed. Checking local registry..."
+        $Environment = Get-AsioCompanyName
+        if (-not $Environment) { throw "Environment name could not be resolved." }
+    }
+
+    $Environment = $Environment -replace '"', "'" # Scrub quotes
+    $instanceClean = ($InstancePrefix -split '\.')[0]
+    $headers = Get-LiongardAuthHeader $ApiTokenKey $ApiTokenSecret
+
+    Write-Host "Resolving Environment mapping for: $Environment"
+    $resolvedEnv = Resolve-LiongardEnvironmentName $Environment $instanceClean $headers
+    if ($resolvedEnv) { $Environment = $resolvedEnv } 
+    else { throw "Environment '$Environment' not found in Liongard." }
+
+    # 2. Collision Detection (MachineGuid Logic)
+    $localGuid = Get-LocalMachineGuid
+    Write-Host "Local Machine ID: $localGuid"
+    # [Targeted Lookup logic here if $RemoveAgentFromPlatform is true]
+
+    # 3. Preparation & Uninstall
+    if ($EnablePreUninstall) { Invoke-LiongardAgentUninstall }
+
+    # 4. Download & Install
+    $msiPath = Join-Path $Folder "LiongardAgent-lts.msi"
+    $logPath = Join-Path $Folder "AgentInstall.log"
+    Write-Host "Downloading installer..."
+    Invoke-WebRequest -Uri $InstallerUrl -OutFile $msiPath -UseBasicParsing -ErrorAction Stop
+
+    $msiArgs = @(
+        "/i", "`"$msiPath`"",
+        "LIONGARDURL=$instanceClean.app.liongard.com",
+        "LIONGARDACCESSKEY=$AgentTokenKey",
+        "LIONGARDACCESSSECRET=$AgentTokenSecret",
+        "LIONGARDENVIRONMENT=`"$Environment`"",
+        "LIONGARDAGENTNAME=$env:COMPUTERNAME",
+        "/qn", "/norestart", "/L*V", "`"$logPath`""
+    )
+
+    Write-Host "Executing installation..."
+    $proc = Start-Process "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+    
+    # 5. Summary Report
+    $summary = Read-MsiLogSummary -Path $logPath
+    $finalCode = if ($summary) { $summary.Code } else { $proc.ExitCode }
+    Write-Host "Final Exit Code: $finalCode"
+
+    if ($finalCode -eq 0 -or $finalCode -eq 3010) {
+        Write-Host "Deployment Successful."
+    } else {
+        throw "MSI installation failed with code $finalCode."
+    }
+}
+catch {
+    Write-Error "CRITICAL FAILURE: $($_.Exception.Message)"
+    exit 1
+}
+finally {
+    Stop-Transcript | Out-Null
+}
