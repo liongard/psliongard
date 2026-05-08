@@ -67,7 +67,7 @@ if ([string]::IsNullOrWhiteSpace($OutFile)) {
 }
 
 $baseUrl         = "https://agents.static.liongard.com"
-$baseDownloadUrl = if ($PreviewGuid) { "$baseUrl/$PreviewGuid" } else { $baseUrl }
+$baseDownloadUrl = if ($PreviewGuid) { "$baseUrl/$($PreviewGuid.ToString().ToUpper())" } else { $baseUrl }
 $downloadUrl     = "$baseDownloadUrl/$filename"
 $shaUrl          = "$downloadUrl.sha256"
 $shaFile         = "$OutFile.sha256"
