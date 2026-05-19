@@ -8,7 +8,8 @@
     - Scenario 2: Defining an environment and adding a new custom Agent name
     - Scenario 3: Not defining an environment and leaving default Agent name
     - Scenario 4: Not defining an environment and adding a new custom Agent name
-    - Scenario 5: NetworkIQ install (EXE installer only)
+    - Scenario 5: Install with Enhanced Network Discovery enabled (EXE installer only)
+    - Scenario 6: Install with Proxy Server
 
     Recommended: run via Task using a .env file rather than passing credentials
     directly. Copy .env.example to .env (or .env.<instance> for named instances),
@@ -208,7 +209,7 @@ function Test-AgentInstallation {
         if ($npcapSvc) {
             Write-LiongardLog "Npcap service detected (status: $($npcapSvc.Status))" "SUCCESS"
         } else {
-            Write-LiongardLog "Npcap service not found after NetworkIQ install" "ERROR"
+            Write-LiongardLog "Npcap service not found after Enhanced Network Discovery components should be installed" "ERROR"
             $script:TestResults += @{ Scenario = $ScenarioName; Status = "FAILED"; Reason = "Npcap service not found"; AgentID = $agent.ID; AgentName = $agent.Name }
             return @{ AgentID = $agent.ID; AgentName = $agent.Name }
         }
@@ -432,7 +433,7 @@ Assert-Uninstalled
 Remove-TestAgent $s4
 Start-Sleep -Seconds 5
 
-# Scenario 5: NetworkIQ (EXE installer only - skipped when only MSIPath is provided)
+# Scenario 5: Install with Enhanced Network Discovery enabled (EXE installer only - skipped when only MSIPath is provided)
 if ($InstallerPath) {
     $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: Install Enhanced Network Discovery" `
         -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName `
@@ -441,8 +442,8 @@ if ($InstallerPath) {
     Assert-Uninstalled
     Remove-TestAgent $s5
 } else {
-    Write-LiongardLog "Scenario 5 (NetworkIQ) skipped: requires EXE installer (-InstallerPath)." "WARNING"
-    $script:TestResults += @{ Scenario = "Scenario 5: NetworkIQ Install"; Status = "SKIPPED"; Reason = "No InstallerPath provided" }
+    Write-LiongardLog "Scenario 5 (EnhancedNetworkDiscovery) skipped: requires EXE installer (-InstallerPath)." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 5: Install Enhanced Network Discovery"; Status = "SKIPPED"; Reason = "No InstallerPath provided" }
 }
 
 # Results summary

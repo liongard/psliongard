@@ -78,21 +78,21 @@ Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
     -AgentTokenKey           "key" -AgentTokenSecret "secret" `
     -IncludeEnvironmentValue $false
 
-# Install with NetworkIQ components
+# Install with Enhanced Network Discovery components
 .\Scripts\Install-LiongardAgent.ps1 `
     -InstancePrefix   us1 `
     -ApiTokenKey      "key" -ApiTokenSecret   "secret" `
     -AgentTokenKey    "key" -AgentTokenSecret "secret" `
     -Environment      "Acme Corp" `
-    -InstallNetworkIQ $true
+    -InstallEnhancedNetworkDiscovery $true
 
 # Download latest agent installer (defaults to version 5.3.0, validates cosign signature)
 .\Scripts\Download-LiongardAgentInstaller.ps1 -Version "5.3.0"
 
 # Download a preview build
 .\Scripts\Download-LiongardAgentInstaller.ps1 `
-    -Version "5.4.0" `
-    -PreviewGuid "54BA085D-AECD-4304-B279-B14216C11E93"
+    -Version "5.3.1" `
+    -PreviewGuid "5EA64AA0-8C56-44DA-BAC2-3CCFA712100E"
 
 # Download without signature validation
 .\Scripts\Download-LiongardAgentInstaller.ps1 -Version "5.3.0" -ValidateSignature $false

@@ -39,7 +39,7 @@ function Install-LiongardAgent {
     Custom name for the agent. Defaults to the machine hostname.
 
 .PARAMETER InstallEnhancedNetworkDiscovery
-    Enables Network IQ when using the EXE installer. Ignored for MSI installs.
+    Install the Enhanced Network Discovery components when using the EXE installer. Ignored for MSI installs.
 
 .OUTPUTS
     System.Boolean

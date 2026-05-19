@@ -91,7 +91,7 @@ Installs the Liongard Agent on the local machine. Handles pre-uninstall of an ex
     -AgentTokenSecret        "your-agent-secret" `
     -IncludeEnvironmentValue $false
 
-# Install with Network IQ (installs Npcap for network discovery)
+# Install with Enhanced Network Discovery (installs Npcap and C++ runtime)
 .\Scripts\Install-LiongardAgent.ps1 `
     -InstancePrefix   us1 `
     -ApiTokenKey      "your-admin-key" `
@@ -99,7 +99,7 @@ Installs the Liongard Agent on the local machine. Handles pre-uninstall of an ex
     -AgentTokenKey    "your-agent-key" `
     -AgentTokenSecret "your-agent-secret" `
     -Environment      "Acme Corp" `
-    -InstallNetworkIQ $true
+    -InstallEnhancedNetworkDiscovery $true
 ```
 
 | Parameter | Type | Default | Description |
@@ -111,7 +111,7 @@ Installs the Liongard Agent on the local machine. Handles pre-uninstall of an ex
 | `-AgentTokenSecret` | `[string]` | required | Agent Install Token secret |
 | `-Environment` | `[string]` | | Environment name to assign the agent to |
 | `-IncludeEnvironmentValue` | `[bool]` | `$true` | Pass the environment to the installer |
-| `-InstallNetworkIQ` | `[bool]` | `$false` | Install Npcap for network discovery |
+| `-InstallEnhancedNetworkDiscovery` | `[bool]` | `$false` | Install Npcap and C++ Runtime for network discovery |
 | `-EnablePreUninstall` | `[bool]` | `$true` | Remove an existing agent before installing |
 | `-InstallerUrl` | `[string]` | LTS URL | Override the installer download URL |
 
