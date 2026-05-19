@@ -116,7 +116,7 @@ function Test-AgentInstallation {
         [string]$AccessSecret,
         [string]$Environment     = $null,
         [string]$AgentName       = $null,
-        [switch]$InstallNetworkIQ
+        [switch]$InstallEnhancedNetworkDiscovery
     )
 
     Write-LiongardLog "========================================"
@@ -136,7 +136,7 @@ function Test-AgentInstallation {
         Environment   = $Environment
         AgentName     = $AgentName
     }
-    if ($InstallNetworkIQ) { $installParams.InstallNetworkIQ = $true }
+    if ($InstallEnhancedNetworkDiscovery) { $installParams.InstallEnhancedNetworkDiscovery = $true }
 
     $installSuccess = Install-LiongardAgent @installParams
 
@@ -203,7 +203,7 @@ function Test-AgentInstallation {
         Write-LiongardLog "Service is not running" "WARNING"
     }
 
-    if ($InstallNetworkIQ) {
+    if ($InstallEnhancedNetworkDiscovery) {
         $npcapSvc = Get-Service -Name "npcap" -ErrorAction SilentlyContinue
         if ($npcapSvc) {
             Write-LiongardLog "Npcap service detected (status: $($npcapSvc.Status))" "SUCCESS"
@@ -434,9 +434,9 @@ Start-Sleep -Seconds 5
 
 # Scenario 5: NetworkIQ (EXE installer only - skipped when only MSIPath is provided)
 if ($InstallerPath) {
-    $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: NetworkIQ Install" `
+    $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: Install Enhanced Network Discovery" `
         -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName `
-        -AgentName $null -InstallNetworkIQ
+        -AgentName $null -InstallEnhancedNetworkDiscovery
     Uninstall-LiongardAgent -InstallerPath $InstallerPath
     Assert-Uninstalled
     Remove-TestAgent $s5

@@ -10,7 +10,7 @@ function Install-LiongardAgent {
 
     Provide exactly one of -MSIPath or -InstallerPath. MSI installations use
     msiexec.exe; EXE installations call the installer directly and additionally
-    support the -InstallNetworkIQ flag.
+    support the -InstallEnhancedNetworkDiscovery flag.
 
     Credentials are redacted in log output.
 
@@ -38,7 +38,7 @@ function Install-LiongardAgent {
 .PARAMETER AgentName
     Custom name for the agent. Defaults to the machine hostname.
 
-.PARAMETER InstallNetworkIQ
+.PARAMETER InstallEnhancedNetworkDiscovery
     Enables Network IQ when using the EXE installer. Ignored for MSI installs.
 
 .OUTPUTS
@@ -54,7 +54,7 @@ function Install-LiongardAgent {
     Install-LiongardAgent -LiongardURL "us1.app.liongard.com" `
         -AccessKey $token.AccessKeyID -AccessSecret $token.Secret `
         -InstallerPath "C:\LiongardAgentInstaller.exe" `
-        -Environment "Production" -AgentName "web-01" -InstallNetworkIQ
+        -Environment "Production" -AgentName "web-01" -InstallEnhancedNetworkDiscovery
 #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([bool])]
@@ -78,7 +78,7 @@ function Install-LiongardAgent {
 
         [string]$AgentName,
 
-        [switch]$InstallNetworkIQ
+        [switch]$InstallEnhancedNetworkDiscovery
     )
 
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -122,7 +122,7 @@ function Install-LiongardAgent {
             "LiongardAccessKey=$AccessKey",
             "LiongardAccessSecret=$AccessSecret"
         )
-        if ($InstallNetworkIQ) { $installArgs += "InstallNetworkIQ=1" }
+        if ($InstallEnhancedNetworkDiscovery) { $installArgs += "InstallEnhancedNetworkDiscovery=1" }
         if ($Environment) { $installArgs += "LiongardEnvironment=`"$Environment`"" }
         if ($AgentName)   { $installArgs += "LiongardAgentName=$AgentName" }
 
@@ -169,7 +169,7 @@ function Install-LiongardAgent {
         Write-LiongardLog "Installation folder not found" "WARNING"
     }
 
-    if ($InstallerPath -and $InstallNetworkIQ) {
+    if ($InstallerPath -and $InstallEnhancedNetworkDiscovery) {
         $vcRedist = Get-ItemProperty $uninstallPaths -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "Microsoft Visual C++*Redistributable*x86*" -and $_.DisplayVersion } |
             Sort-Object DisplayVersion -Descending |
