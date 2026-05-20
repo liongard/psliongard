@@ -41,6 +41,17 @@ function Install-LiongardAgent {
 .PARAMETER InstallEnhancedNetworkDiscovery
     Install the Enhanced Network Discovery components when using the EXE installer. Ignored for MSI installs.
 
+.PARAMETER ProxyURL
+    Optional HTTP(S) proxy URL the agent should use to reach the Liongard platform
+    (e.g. http://proxy.corp.local:3128 or http://user:pass@proxy.corp.local:3128).
+    When provided, passed to the installer as PROXYURL (MSI) or ProxyUrl (EXE).
+    Any userinfo (user:pass@) is redacted in log output.
+
+.PARAMETER DeviceGuid
+    Optional GUID to override the agent's device identity. When omitted, the agent
+    defaults to the system MachineGuid (HKLM:\SOFTWARE\Microsoft\Cryptography).
+    Passed to the installer as DEVICEGUID (MSI) or DeviceGuid (EXE).
+
 .OUTPUTS
     System.Boolean
     $true if installation succeeded, $false otherwise.
@@ -78,7 +89,13 @@ function Install-LiongardAgent {
 
         [string]$AgentName,
 
-        [switch]$InstallEnhancedNetworkDiscovery
+        [switch]$InstallEnhancedNetworkDiscovery,
+
+        [Parameter(Mandatory=$false)]
+        [string]$ProxyURL,
+
+        [Parameter(Mandatory=$false)]
+        [Guid]$DeviceGuid
     )
 
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -90,6 +107,8 @@ function Install-LiongardAgent {
     Write-LiongardLog "  Agent Name: $(if ($AgentName) { $AgentName } else { 'Default (hostname)' })"
     Write-LiongardLog "  Installer: $(if ($InstallerPath) { $InstallerPath } else { 'Not specified' })"
     Write-LiongardLog "  MSI: $(if ($MSIPath) { $MSIPath } else { 'Not specified' })"
+    Write-LiongardLog "  ProxyURL: $(if ($ProxyURL) { ($ProxyURL -replace '(://)([^:/@]+):([^@]+)@', '$1$2:***@') } else { 'Not specified' })"
+    Write-LiongardLog "  DeviceGuid: $(if ($DeviceGuid) { $DeviceGuid } else { 'Default (system MachineGuid)' })"
 
     if ($MSIPath) {
         $logFile     = "$env:TEMP\LiongardAgent-Install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
@@ -102,9 +121,12 @@ function Install-LiongardAgent {
         )
         if ($Environment) { $installArgs += "LIONGARDENVIRONMENT=`"$Environment`"" }
         if ($AgentName)   { $installArgs += "LIONGARDAGENTNAME=$AgentName" }
+        if ($ProxyURL)    { $installArgs += "PROXYURL=`"$ProxyURL`"" }
+        if ($DeviceGuid)  { $installArgs += "DEVICEGUID=$DeviceGuid" }
 
         $installArgsString = $installArgs -join " "
         $redacted = $installArgsString -replace '(?i)(Access(?:Key|Secret)=)\S+', '$1***'
+        $redacted = $redacted -replace '(://)([^:/@]+):([^@]+)@', '$1$2:***@'
         Write-LiongardLog "Running: msiexec $redacted"
 
         if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Install Liongard Agent from MSI")) {
@@ -125,9 +147,12 @@ function Install-LiongardAgent {
         if ($InstallEnhancedNetworkDiscovery) { $installArgs += "InstallEnhancedNetworkDiscovery=1" }
         if ($Environment) { $installArgs += "LiongardEnvironment=`"$Environment`"" }
         if ($AgentName)   { $installArgs += "LiongardAgentName=$AgentName" }
+        if ($ProxyURL)    { $installArgs += "ProxyUrl=`"$ProxyURL`"" }
+        if ($DeviceGuid)  { $installArgs += "DeviceGuid=$DeviceGuid" }
 
         $installArgsString = $installArgs -join " "
         $redacted = $installArgsString -replace '(?i)(Access(?:Key|Secret)=)\S+', '$1***'
+        $redacted = $redacted -replace '(://)([^:/@]+):([^@]+)@', '$1$2:***@'
         Write-LiongardLog "Running: $InstallerPath $redacted"
 
         if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Install Liongard Agent from EXE")) {
