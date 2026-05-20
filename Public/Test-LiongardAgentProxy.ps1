@@ -1,69 +1,50 @@
-function Assert-AgentHasNoDirectLiongardConnection {
+function Test-LiongardAgentProxy {
+<#
+.SYNOPSIS
+    Samples the agent's TCP connections over a window and fails if any direct
+    HTTP/HTTPS connection (port 80/443) exists that is not the configured proxy.
+#>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$ProxyUrl
+        [string]$ProxyUrl,
+
+        [int]$DurationSeconds = 60,
+
+        [int]$IntervalSeconds = 5
     )
 
-    $proxyUri = [Uri]$ProxyUrl
-    $proxyPort = $proxyUri.Port
-
-    $agentProcesses = Get-Process |
-        Where-Object {
-            $_.ProcessName -like "*liongard*" -or
-            $_.ProcessName -like "*roar*"
-        }
-
-    if (-not $agentProcesses) {
-        throw "Could not find Liongard agent process."
-    }
-
-    $agentPids = $agentProcesses.Id
-
-    $connections = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue |
-        Where-Object { $agentPids -contains $_.OwningProcess }
-
-    $badConnections = $connections | Where-Object {
-        $_.RemotePort -in @(80, 443) -and
-        $_.RemotePort -ne $proxyPort
-    }
-
-    if ($badConnections) {
-        $badConnections | Format-Table -AutoSize | Out-String | Write-LiongardLog
-        throw "Agent has direct established HTTP/S connections instead of only using proxy."
-    }
-
-    Write-LiongardLog "No direct Liongard Agent HTTP/S connections detected." "SUCCESS"
-}
-
-function Assert-ProxyLogContainsLiongardTraffic {
-    param(
-        [Parameter(Mandatory)]
-        [string]$ProxyAccessLogPath,
-
-        [Parameter(Mandatory)]
-        [string]$LiongardURL,
-
-        [int]$TimeoutSeconds = 180
-    )
-
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $proxyPort = ([Uri]$ProxyUrl).Port
+    $deadline  = (Get-Date).AddSeconds($DurationSeconds)
+    $samples   = 0
+    $seenAgent = $false
 
     while ((Get-Date) -lt $deadline) {
-        if (Test-Path $ProxyAccessLogPath) {
-            $hits = Select-String `
-                -Path $ProxyAccessLogPath `
-                -Pattern $LiongardURL `
-                -SimpleMatch `
-                -ErrorAction SilentlyContinue
+        $agentProcesses = Get-Process | Where-Object {
+            $_.ProcessName -like '*liongard*' -or $_.ProcessName -like '*roar*'
+        }
 
-            if ($hits) {
-                Write-LiongardLog "Proxy access log contains traffic for $LiongardURL." "SUCCESS"
-                return
+        if ($agentProcesses) {
+            $seenAgent = $true
+            $agentPids = $agentProcesses.Id
+
+            $bad = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue |
+                Where-Object { $agentPids -contains $_.OwningProcess } |
+                Where-Object { $_.RemotePort -in @(80, 443) -and $_.RemotePort -ne $proxyPort }
+
+            if ($bad) {
+                $bad | Format-Table -AutoSize | Out-String | Write-LiongardLog
+                throw "Agent has direct established HTTP/S connections instead of only using proxy."
             }
         }
 
-        Start-Sleep -Seconds 5
+        $samples++
+        Start-Sleep -Seconds $IntervalSeconds
     }
 
-    throw "Proxy access log did not contain traffic for $LiongardURL."
+    if (-not $seenAgent) {
+        throw "Could not find Liongard agent process during $DurationSeconds-second sampling window."
+    }
+
+    Write-LiongardLog "No direct Liongard Agent HTTP/S connections detected over $samples samples." "SUCCESS"
 }

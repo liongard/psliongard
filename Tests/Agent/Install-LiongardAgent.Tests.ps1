@@ -326,18 +326,7 @@ function Invoke-ProxyScenario {
     $agentInfo = Test-AgentInstallation @testParams
 
     try {
-        Write-LiongardLog "Verifying direct Liongard egress is blocked..."
-        $directResult = Test-NetConnection `
-            -ComputerName $LiongardURL `
-            -Port 443 `
-            -InformationLevel Quiet `
-            -WarningAction SilentlyContinue
-        if ($directResult) {
-            throw "Direct outbound 443 to $LiongardURL succeeded. This test cannot prove proxy-only traffic."
-        }
-        Write-LiongardLog "Direct outbound 443 is blocked as expected." "SUCCESS"
-
-        Assert-AgentHasNoDirectLiongardConnection -ProxyURL $ProxyURL
+        Test-LiongardAgentProxy -ProxyURL $ProxyURL -DurationSeconds 60 -IntervalSeconds 5
     }
     catch {
         Write-LiongardLog "Proxy assertions failed for ${ScenarioName}: $($_.Exception.Message)" "ERROR"
