@@ -171,7 +171,12 @@ param(
     [bool]$ClearProxyEnvironmentForInstaller = $true
 )
 
-Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force
+try {
+    Import-Module "$PSScriptRoot\..\PSLiongard.psd1" -Force -ErrorAction Stop
+}
+catch {
+    throw "Failed to import PSLiongard module: $($_.Exception.Message)"
+}
 
 $script:TranscriptStarted = $false
 $script:TranscriptPath = $null

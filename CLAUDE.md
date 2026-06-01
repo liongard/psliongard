@@ -24,7 +24,15 @@ liongard-powershell/
 │   └── Test-LiongardScheduledTask.ps1
 ├── Scripts/               # Standalone operational scripts
 │   ├── Download-LiongardAgentInstaller.ps1
-│   └── Install-LiongardAgent.ps1
+│   ├── Install-LiongardAgent.ps1
+│   ├── Uninstall-LiongardAgent.ps1
+│   └── RMM/               # RMM-specific install wrappers around the module
+│       ├── NCentral/
+│       │   ├── Install-LiongardAgent.ps1
+│       │   └── README.md
+│       └── NinjaRMM/
+│           ├── Install-LiongardAgent.ps1
+│           └── README.md
 └── Tests/                 # Test files (*.Tests.ps1 – Pester-compatible)
     ├── Agent/
     │   └── Install-LiongardAgent.Tests.ps1   # Integration: agent install scenarios
