@@ -65,9 +65,10 @@
 .PARAMETER InstallerFileName
     Filename used when saving the installer to Folder.
 
-.PARAMETER InstallNetworkIQ
-    Pass 1 to the installer's InstallNetworkIQ argument (installs Npcap and the C++
-    runtime for Network IQ support). Default $false.
+.PARAMETER InstallEnhancedNetworkDiscovery
+    Pass 1 (true) to the installer's InstallEnhancedNetworkDiscovery argument
+    (installs Npcap and the C++ runtime for Enhanced Network Discovery).
+    Default $false.
 
 .PARAMETER EulaAccepted
     Forwarded to the installer as EulaAccepted. Must be $true for silent install.
@@ -106,11 +107,11 @@
 
 .EXAMPLE
     .\Install-LiongardAgent.ps1 `
-        -InstancePrefix          us1 `
-        -ApiTokenKey             "key" -ApiTokenSecret   "secret" `
-        -AgentTokenKey           "key" -AgentTokenSecret "secret" `
-        -IncludeEnvironmentValue $false `
-        -InstallNetworkIQ        $true
+        -InstancePrefix                     us1 `
+        -ApiTokenKey                        "key" -ApiTokenSecret   "secret" `
+        -AgentTokenKey                      "key" -AgentTokenSecret "secret" `
+        -IncludeEnvironmentValue            $false `
+        -InstallEnhancedNetworkDiscovery    $true
 
 .EXAMPLE
     .\Install-LiongardAgent.ps1 `
@@ -160,7 +161,7 @@ param(
     [string]$Folder                          = 'C:\Liongard',
     [string]$InstallerUrl                    = 'https://agents.static.liongard.com/LiongardAgent-lts.exe',
     [string]$InstallerFileName               = 'LiongardAgent-lts.exe',
-    [bool]$InstallNetworkIQ                  = $false,
+    [bool]$InstallEnhancedNetworkDiscovery                  = $false,
     [bool]$EulaAccepted                      = $true,
     [bool]$SuppressRestart                   = $true,
     [bool]$PassiveMode                       = $false,
@@ -992,7 +993,7 @@ function Write-ConfigurationSnapshot {
     Write-SectionValue -Label 'Folder' -Value $Folder
     Write-SectionValue -Label 'InstallerUrl' -Value $InstallerUrl
     Write-SectionValue -Label 'InstallerFileName' -Value $InstallerFileName
-    Write-SectionValue -Label 'InstallNetworkIQ' -Value $InstallNetworkIQ
+    Write-SectionValue -Label 'InstallEnhancedNetworkDiscovery' -Value $InstallEnhancedNetworkDiscovery
     Write-SectionValue -Label 'EulaAccepted' -Value $EulaAccepted
     Write-SectionValue -Label 'SuppressRestart' -Value $SuppressRestart
     Write-SectionValue -Label 'PassiveMode' -Value $PassiveMode
@@ -1665,7 +1666,7 @@ function Get-ExeInstallArgument {
         [string]$AgentDescription,
         [string]$DeviceGuidOverride,
         [bool]$EulaAccepted,
-        [bool]$InstallNetworkIQ,
+        [bool]$InstallEnhancedNetworkDiscovery,
         [bool]$SuppressRestart,
         [bool]$PassiveMode,
         [string]$LogPath,
@@ -1684,7 +1685,7 @@ function Get-ExeInstallArgument {
     }
 
     $arguments.Add("EulaAccepted=$(Convert-BoolToBundleValue -Value $EulaAccepted)")
-    $arguments.Add("InstallNetworkIQ=$(Convert-BoolToBundleValue -Value $InstallNetworkIQ)")
+    $arguments.Add("InstallEnhancedNetworkDiscovery=$(Convert-BoolToBundleValue -Value $InstallEnhancedNetworkDiscovery)")
     $arguments.Add("LiongardUrl=$LiongardHost")
     $arguments.Add("LiongardAccessKey=$AgentTokenKey")
     $arguments.Add("LiongardAccessSecret=$AgentTokenSecret")
@@ -2135,7 +2136,7 @@ function Resolve-ComponentValidationStatus {
     param(
         [string]$Name,
         [pscustomobject[]]$BundlePackages,
-        [bool]$InstallNetworkIQRequested
+        [bool]$InstallEnhancedNetworkDiscoveryRequested
     )
 
     $matchingPackages = @($BundlePackages | Where-Object { $_.Kind -eq $Name })
@@ -2194,11 +2195,11 @@ function Resolve-ComponentValidationStatus {
             }
         }
         'Npcap' {
-            if (-not $InstallNetworkIQRequested) {
+            if (-not $InstallEnhancedNetworkDiscoveryRequested) {
                 return [pscustomobject]@{
                     Name   = 'Npcap'
                     Status = 'SkippedByConfig'
-                    Detail = 'InstallNetworkIQ is false.'
+                    Detail = 'InstallEnhancedNetworkDiscovery is false.'
                 }
             }
 
@@ -2388,7 +2389,7 @@ function New-ComponentValidationRecord {
 function Get-ComponentValidationResult {
     param(
         [Parameter(Mandatory)][string]$LogPath,
-        [Parameter(Mandatory)][bool]$InstallNetworkIQRequested
+        [Parameter(Mandatory)][bool]$InstallEnhancedNetworkDiscoveryRequested
     )
 
     $bundlePackages = @(Get-InstallerBundlePackageSummary -Path $LogPath)
@@ -2405,7 +2406,7 @@ function Get-ComponentValidationResult {
     $results = @(
         New-ComponentValidationRecord -Name 'Liongard Agent MSI' -Requested $true -Bundle $agentBundle -Local (Get-LiongardAgentLocalValidation)
         New-ComponentValidationRecord -Name 'Visual C++ Runtime' -Requested $true -Bundle $vcBundle -Local (Get-VisualCppLocalValidation)
-        New-ComponentValidationRecord -Name 'Npcap' -Requested $InstallNetworkIQRequested -Bundle $npcapBundle -Local (Get-NpcapLocalValidation) -SkipStatus 'SkippedByConfig'
+        New-ComponentValidationRecord -Name 'Npcap' -Requested $InstallEnhancedNetworkDiscoveryRequested -Bundle $npcapBundle -Local (Get-NpcapLocalValidation) -SkipStatus 'SkippedByConfig'
     )
 
     return [pscustomobject]@{
@@ -2748,7 +2749,7 @@ try {
         -AgentDescription $AgentDescription `
         -DeviceGuidOverride $deviceGuidOverride `
         -EulaAccepted $EulaAccepted `
-        -InstallNetworkIQ $InstallNetworkIQ `
+        -InstallEnhancedNetworkDiscovery $InstallEnhancedNetworkDiscovery `
         -SuppressRestart $SuppressRestart `
         -PassiveMode $PassiveMode `
         -LogPath $logPath `
@@ -2798,7 +2799,7 @@ try {
     Complete-LogSection
 
     try {
-        $componentValidation = Get-ComponentValidationResult -LogPath $logPath -InstallNetworkIQRequested $InstallNetworkIQ
+        $componentValidation = Get-ComponentValidationResult -LogPath $logPath -InstallEnhancedNetworkDiscoveryRequested $InstallEnhancedNetworkDiscovery
         Write-BundlePackageResult -BundlePackages $componentValidation.BundlePackages
         Write-ComponentValidationSummary -Components $componentValidation.Components
         $failureHints = @(Get-InstallerFailureHint -LogPath $logPath)

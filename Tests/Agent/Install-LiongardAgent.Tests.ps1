@@ -3,12 +3,19 @@
     Tests Liongard Agent installation scenarios on Windows.
 
 .DESCRIPTION
-    Tests five installation scenarios for the Liongard Agent:
+    Executes the agent install matrix and (optionally) emits a JUnit XML report:
+
     - Scenario 1: Defining an environment and leaving default Agent name
     - Scenario 2: Defining an environment and adding a new custom Agent name
     - Scenario 3: Not defining an environment and leaving default Agent name
     - Scenario 4: Not defining an environment and adding a new custom Agent name
-    - Scenario 5: NetworkIQ install (EXE installer only)
+    - Scenario 5: Install with Enhanced Network Discovery enabled (EXE installer only)
+    - Scenario 6: Install with ProxyURL + Environment + Default Agent Name
+    - Scenario 7: Install with ProxyURL and no environment
+    - Scenario 8: Install with ProxyURL + Enhanced Network Discovery (EXE installer only)
+    - Scenario 9: Install with an authenticated upstream ProxyURL (user:pass@host)
+    - Scenario 10: Install with -DeviceGuid override (agent GUID matches the passed value)
+    - Scenario 11: Install without -DeviceGuid (agent GUID defaults to the system MachineGuid)
 
     Recommended: run via Task using a .env file rather than passing credentials
     directly. Copy .env.example to .env (or .env.<instance> for named instances),
@@ -45,14 +52,21 @@
 .PARAMETER SkipTokenCreation
     Skip token creation and use provided AccessKey/AccessSecret.
 
+.PARAMETER ProxyURL
+    Optional outbound HTTP(S) proxy used for Scenarios 6-8. When omitted, those scenarios are SKIPPED.
+
+.PARAMETER AuthenticatedProxyURL
+    Optional proxy URL with embedded user:pass@ used for Scenario 9. When omitted, the scenario is SKIPPED.
+
+.PARAMETER ResultsPath
+    Optional path to write a JUnit-style XML test report (for CI ingestion).
+    The directory is created if it does not exist.
+
 .EXAMPLE
     .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi"
 
 .EXAMPLE
-    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe"
-
-.EXAMPLE
-    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -MSIPath "C:\LiongardAgent.msi" -AccessKey "token-key" -AccessSecret "token-secret" -TestEnvironmentName "ExistingEnv"
+    .\Tests\Agent\Install-LiongardAgent.Tests.ps1 -LiongardURL "us1.app.liongard.com" -AdminApiKey "key" -AdminApiSecret "secret" -InstallerPath "C:\LiongardAgentInstaller.exe" -ResultsPath ".\test-results\agent-install.xml"
 #>
 
 [CmdletBinding()]
@@ -97,7 +111,16 @@ param(
     [switch]$SkipEnvironmentCreation = $false,
 
     [Parameter(Mandatory=$false)]
-    [switch]$SkipTokenCreation = $false
+    [switch]$SkipTokenCreation = $false,
+
+    [Parameter(Mandatory=$false)]
+    [string]$ProxyURL,
+
+    [Parameter(Mandatory=$false)]
+    [string]$AuthenticatedProxyURL,
+
+    [Parameter(Mandatory=$false)]
+    [string]$ResultsPath
 )
 
 Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force
@@ -105,7 +128,8 @@ Import-Module "$PSScriptRoot\..\..\PSLiongard.psd1" -Force
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$TestResults = @()
+$TestResults    = @()
+$SuiteStartTime = Get-Date
 
 #region Orchestration
 
@@ -116,7 +140,9 @@ function Test-AgentInstallation {
         [string]$AccessSecret,
         [string]$Environment     = $null,
         [string]$AgentName       = $null,
-        [switch]$InstallNetworkIQ
+        [switch]$InstallEnhancedNetworkDiscovery,
+        [string]$ProxyURL        = $null,
+        [Guid]$DeviceGuid
     )
 
     Write-LiongardLog "========================================"
@@ -136,7 +162,9 @@ function Test-AgentInstallation {
         Environment   = $Environment
         AgentName     = $AgentName
     }
-    if ($InstallNetworkIQ) { $installParams.InstallNetworkIQ = $true }
+    if ($InstallEnhancedNetworkDiscovery) { $installParams.InstallEnhancedNetworkDiscovery = $true }
+    if ($ProxyURL)                        { $installParams.ProxyURL    = $ProxyURL }
+    if ($DeviceGuid)                      { $installParams.DeviceGuid  = $DeviceGuid }
 
     $installSuccess = Install-LiongardAgent @installParams
 
@@ -203,12 +231,12 @@ function Test-AgentInstallation {
         Write-LiongardLog "Service is not running" "WARNING"
     }
 
-    if ($InstallNetworkIQ) {
+    if ($InstallEnhancedNetworkDiscovery) {
         $npcapSvc = Get-Service -Name "npcap" -ErrorAction SilentlyContinue
         if ($npcapSvc) {
             Write-LiongardLog "Npcap service detected (status: $($npcapSvc.Status))" "SUCCESS"
         } else {
-            Write-LiongardLog "Npcap service not found after NetworkIQ install" "ERROR"
+            Write-LiongardLog "Npcap service not found after Enhanced Network Discovery components should be installed" "ERROR"
             $script:TestResults += @{ Scenario = $ScenarioName; Status = "FAILED"; Reason = "Npcap service not found"; AgentID = $agent.ID; AgentName = $agent.Name }
             return @{ AgentID = $agent.ID; AgentName = $agent.Name }
         }
@@ -265,6 +293,187 @@ function Remove-TestAgent {
             Remove-LiongardAgent @apiParams -AgentName $AgentInfo.AgentName -Confirm:$false
         }
     }
+}
+
+function Assert-Uninstalled {
+    $svc = Get-Service -Name "roaragent.exe" -ErrorAction SilentlyContinue
+    if ($svc) { Write-LiongardLog "WARNING: roaragent.exe service still present after uninstall" "WARNING" }
+}
+
+#endregion
+
+#region ProxyHelpers
+
+function Invoke-ProxyScenario {
+    param(
+        [Parameter(Mandatory)] [string]$ScenarioName,
+        [Parameter(Mandatory)] [string]$ProxyURL,
+        [string]$Environment,
+        [string]$AgentName,
+        [switch]$InstallEnhancedNetworkDiscovery
+    )
+
+    $testParams = @{
+        ScenarioName = $ScenarioName
+        AccessKey    = $accessKey
+        AccessSecret = $accessSecret
+        Environment  = $Environment
+        AgentName    = $AgentName
+        ProxyURL     = $ProxyURL
+    }
+    if ($InstallEnhancedNetworkDiscovery) { $testParams.InstallEnhancedNetworkDiscovery = $true }
+
+    $agentInfo = Test-AgentInstallation @testParams
+
+    try {
+        Test-LiongardAgentProxy -ProxyURL $ProxyURL -DurationSeconds 60 -IntervalSeconds 5
+    }
+    catch {
+        Write-LiongardLog "Proxy assertions failed for ${ScenarioName}: $($_.Exception.Message)" "ERROR"
+        $existing = $script:TestResults | Where-Object { $_.Scenario -eq $ScenarioName -and $_.Status -eq "PASSED" } | Select-Object -First 1
+        if ($existing) {
+            $existing.Status = "FAILED"
+            $existing.Reason = "Proxy assertion failed: $($_.Exception.Message)"
+        } else {
+            $script:TestResults += @{
+                Scenario  = $ScenarioName
+                Status    = "FAILED"
+                Reason    = "Proxy assertion failed: $($_.Exception.Message)"
+                AgentID   = $agentInfo.AgentID
+                AgentName = $agentInfo.AgentName
+            }
+        }
+    }
+    finally {
+        Uninstall-LiongardAgent -InstallerPath $InstallerPath
+        Assert-Uninstalled
+        Remove-TestAgent $agentInfo
+        Start-Sleep -Seconds 5
+    }
+}
+
+#endregion
+
+#region DeviceGuidHelpers
+
+function Get-SystemMachineGuid {
+    (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction Stop).MachineGuid
+}
+
+function Get-LiongardAgentDeviceGuid {
+    $path = 'HKLM:\SOFTWARE\WOW6432Node\Liongard\LiongardAgent'
+    $name = 'MachineID'
+    try {
+        $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name
+        if ($val) {
+            Write-LiongardLog "Read DeviceGuid from $path\$name : $val"
+            return $val
+        }
+    } catch {
+        Write-LiongardLog "Could not read $path\$name : $($_.Exception.Message)" "WARNING"
+    }
+    return $null
+}
+
+function Assert-AgentDeviceGuid {
+    param(
+        [Parameter(Mandatory)] [string]$ExpectedGuid
+    )
+
+    $actual = Get-LiongardAgentDeviceGuid
+    if (-not $actual) {
+        throw "Could not read effective DeviceGuid for installed agent."
+    }
+
+    if (([Guid]$actual) -ne ([Guid]$ExpectedGuid)) {
+        throw "DeviceGuid mismatch. Expected: $ExpectedGuid  Got: $actual"
+    }
+
+    Write-LiongardLog "DeviceGuid matches expected value: $ExpectedGuid" "SUCCESS"
+}
+
+function Invoke-DeviceGuidScenario {
+    param(
+        [Parameter(Mandatory)] [string]$ScenarioName,
+        [Parameter(Mandatory)] [string]$ExpectedDeviceGuid,
+        [Guid]$DeviceGuid
+    )
+
+    $installParams = @{
+        ScenarioName = $ScenarioName
+        AccessKey    = $accessKey
+        AccessSecret = $accessSecret
+        Environment  = $TestEnvironmentName
+        AgentName    = $null
+    }
+    if ($DeviceGuid) { $installParams.DeviceGuid = $DeviceGuid }
+
+    $agentInfo = Test-AgentInstallation @installParams
+
+    try {
+        Assert-AgentDeviceGuid -ExpectedGuid $ExpectedDeviceGuid
+    }
+    catch {
+        Write-LiongardLog "DeviceGuid assertion failed for ${ScenarioName}: $($_.Exception.Message)" "ERROR"
+        $existing = $script:TestResults | Where-Object { $_.Scenario -eq $ScenarioName -and $_.Status -eq "PASSED" } | Select-Object -First 1
+        if ($existing) {
+            $existing.Status = "FAILED"
+            $existing.Reason = "DeviceGuid assertion failed: $($_.Exception.Message)"
+        } else {
+            $script:TestResults += @{
+                Scenario  = $ScenarioName
+                Status    = "FAILED"
+                Reason    = "DeviceGuid assertion failed: $($_.Exception.Message)"
+                AgentID   = $agentInfo.AgentID
+                AgentName = $agentInfo.AgentName
+            }
+        }
+    }
+    finally {
+        Uninstall-LiongardAgent -InstallerPath $InstallerPath
+        Assert-Uninstalled
+        Remove-TestAgent $agentInfo
+        Start-Sleep -Seconds 5
+    }
+}
+
+#endregion
+
+#region Results
+
+function Write-JUnitResult {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [array]$Results,
+        [Parameter(Mandatory)] [datetime]$StartTime
+    )
+
+    $total   = $Results.Count
+    $failed  = @($Results | Where-Object { $_.Status -eq "FAILED" }).Count
+    $skipped = @($Results | Where-Object { $_.Status -eq "SKIPPED" }).Count
+    $elapsed = ((Get-Date) - $StartTime).TotalSeconds
+
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')
+    [void]$sb.AppendLine(("<testsuite name=""Install-LiongardAgent"" tests=""{0}"" failures=""{1}"" skipped=""{2}"" time=""{3:N3}"" timestamp=""{4:s}"">" -f $total, $failed, $skipped, $elapsed, $StartTime))
+
+    foreach ($r in $Results) {
+        $name   = [System.Security.SecurityElement]::Escape($r.Scenario)
+        $reason = if ($r.Reason) { [System.Security.SecurityElement]::Escape($r.Reason) } else { "" }
+        [void]$sb.AppendLine(("  <testcase classname=""Install-LiongardAgent"" name=""{0}"">" -f $name))
+        switch ($r.Status) {
+            "FAILED"  { [void]$sb.AppendLine(("    <failure message=""{0}"">{0}</failure>" -f $reason)) }
+            "SKIPPED" { [void]$sb.AppendLine(("    <skipped message=""{0}"" />" -f $reason)) }
+        }
+        [void]$sb.AppendLine("  </testcase>")
+    }
+
+    [void]$sb.AppendLine("</testsuite>")
+
+    $dir = Split-Path -Path $Path -Parent
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    [System.IO.File]::WriteAllText($Path, $sb.ToString(), [System.Text.Encoding]::UTF8)
+    Write-LiongardLog "Wrote JUnit results to: $Path" "SUCCESS"
 }
 
 #endregion
@@ -393,11 +602,6 @@ Write-LiongardLog "========================================"
 Write-LiongardLog "Running Installation Test Scenarios"
 Write-LiongardLog "========================================"
 
-function Assert-Uninstalled {
-    $svc = Get-Service -Name "roaragent.exe" -ErrorAction SilentlyContinue
-    if ($svc) { Write-LiongardLog "WARNING: roaragent.exe service still present after uninstall" "WARNING" }
-}
-
 # Scenario 1: Environment + Default Agent Name
 $s1 = Test-AgentInstallation -ScenarioName "Scenario 1: Environment + Default Agent Name" `
     -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName -AgentName $null
@@ -432,17 +636,71 @@ Assert-Uninstalled
 Remove-TestAgent $s4
 Start-Sleep -Seconds 5
 
-# Scenario 5: NetworkIQ (EXE installer only - skipped when only MSIPath is provided)
+# Scenario 5: Install with Enhanced Network Discovery enabled (EXE installer only)
 if ($InstallerPath) {
-    $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: NetworkIQ Install" `
+    $s5 = Test-AgentInstallation -ScenarioName "Scenario 5: Install Enhanced Network Discovery" `
         -AccessKey $accessKey -AccessSecret $accessSecret -Environment $TestEnvironmentName `
-        -AgentName $null -InstallNetworkIQ
+        -AgentName $null -InstallEnhancedNetworkDiscovery
     Uninstall-LiongardAgent -InstallerPath $InstallerPath
     Assert-Uninstalled
     Remove-TestAgent $s5
 } else {
-    Write-LiongardLog "Scenario 5 (NetworkIQ) skipped: requires EXE installer (-InstallerPath)." "WARNING"
-    $script:TestResults += @{ Scenario = "Scenario 5: NetworkIQ Install"; Status = "SKIPPED"; Reason = "No InstallerPath provided" }
+    Write-LiongardLog "Scenario 5 (EnhancedNetworkDiscovery) skipped: requires EXE installer (-InstallerPath)." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 5: Install Enhanced Network Discovery"; Status = "SKIPPED"; Reason = "No InstallerPath provided" }
+}
+
+# Scenario 6: ProxyURL + Environment + Default Agent Name
+if ($ProxyURL) {
+    Invoke-ProxyScenario -ScenarioName "Scenario 6: Install with ProxyURL" `
+        -ProxyURL $ProxyURL -Environment $TestEnvironmentName -AgentName $null
+} else {
+    Write-LiongardLog "Scenario 6 (ProxyURL) skipped: requires -ProxyURL." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 6: Install with ProxyURL"; Status = "SKIPPED"; Reason = "No ProxyURL provided" }
+}
+
+# Scenario 7: ProxyURL + No Environment
+if ($ProxyURL) {
+    Invoke-ProxyScenario -ScenarioName "Scenario 7: ProxyURL + No Environment" `
+        -ProxyURL $ProxyURL -Environment $null -AgentName $null
+} else {
+    Write-LiongardLog "Scenario 7 (ProxyURL + No Environment) skipped: requires -ProxyURL." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 7: ProxyURL + No Environment"; Status = "SKIPPED"; Reason = "No ProxyURL provided" }
+}
+
+# Scenario 8: ProxyURL + Enhanced Network Discovery (EXE installer only)
+if ($ProxyURL -and $InstallerPath) {
+    Invoke-ProxyScenario -ScenarioName "Scenario 8: ProxyURL + Enhanced Network Discovery" `
+        -ProxyURL $ProxyURL -Environment $TestEnvironmentName -AgentName $null `
+        -InstallEnhancedNetworkDiscovery
+} else {
+    $reason = if (-not $ProxyURL) { "No ProxyURL provided" } else { "Requires EXE installer (-InstallerPath)" }
+    Write-LiongardLog "Scenario 8 (ProxyURL + END) skipped: $reason." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 8: ProxyURL + Enhanced Network Discovery"; Status = "SKIPPED"; Reason = $reason }
+}
+
+# Scenario 9: Authenticated upstream ProxyURL (user:pass@host)
+if ($AuthenticatedProxyURL) {
+    Invoke-ProxyScenario -ScenarioName "Scenario 9: Authenticated ProxyURL" `
+        -ProxyURL $AuthenticatedProxyURL -Environment $TestEnvironmentName -AgentName $null
+} else {
+    Write-LiongardLog "Scenario 9 (Authenticated ProxyURL) skipped: requires -AuthenticatedProxyURL." "WARNING"
+    $script:TestResults += @{ Scenario = "Scenario 9: Authenticated ProxyURL"; Status = "SKIPPED"; Reason = "No AuthenticatedProxyURL provided" }
+}
+
+# Scenario 10: -DeviceGuid override -> agent GUID equals the override
+$generatedDeviceGuid = [Guid]::NewGuid()
+Write-LiongardLog "Scenario 10 will use generated DeviceGuid override: $generatedDeviceGuid"
+Invoke-DeviceGuidScenario -ScenarioName "Scenario 10: DeviceGuid override" `
+    -DeviceGuid $generatedDeviceGuid -ExpectedDeviceGuid ([string]$generatedDeviceGuid)
+
+# Scenario 11: no -DeviceGuid -> agent GUID defaults to the system MachineGuid
+try {
+    $machineGuid = Get-SystemMachineGuid
+    Invoke-DeviceGuidScenario -ScenarioName "Scenario 11: DeviceGuid defaults to MachineGuid" `
+        -ExpectedDeviceGuid $machineGuid
+} catch {
+    Write-LiongardLog "Scenario 11 (default DeviceGuid) failed to read system MachineGuid: $($_.Exception.Message)" "ERROR"
+    $script:TestResults += @{ Scenario = "Scenario 11: DeviceGuid defaults to MachineGuid"; Status = "FAILED"; Reason = "Could not read HKLM MachineGuid: $($_.Exception.Message)" }
 }
 
 # Results summary
@@ -463,6 +721,10 @@ foreach ($result in $TestResults) {
 }
 
 Write-LiongardLog "Total: $($TestResults.Count)  Passed: $passed  Failed: $failed  Skipped: $skipped"
+
+if ($ResultsPath) {
+    Write-JUnitResult -Path $ResultsPath -Results $TestResults -StartTime $SuiteStartTime
+}
 
 if ($failed -eq 0) {
     Write-LiongardLog "All tests PASSED!" "SUCCESS"
