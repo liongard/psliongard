@@ -15,7 +15,7 @@
     - Scenario 8: Install with ProxyURL + Enhanced Network Discovery (EXE installer only)
     - Scenario 9: Install with an authenticated upstream ProxyURL (user:pass@host)
     - Scenario 10: Install with -DeviceGuid override (agent GUID matches the passed value)
-    - Scenario 11: Install without -DeviceGuid (agent GUID defaults to the system MachineGuid)
+    - Scenario 11: Install without -DeviceGuid (agent generates and persists its own GUID)
 
     Recommended: run via Task using a .env file rather than passing credentials
     directly. Copy .env.example to .env (or .env.<instance> for named instances),
@@ -356,28 +356,42 @@ function Invoke-ProxyScenario {
 
 #region DeviceGuidHelpers
 
-function Get-SystemMachineGuid {
-    (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction Stop).MachineGuid
+function Clear-AgentGuidRegistry {
+    $paths = @(
+        'HKLM:\SOFTWARE\WOW6432Node\Liongard\LiongardAgent\MachineID',
+        'HKLM:\SOFTWARE\Liongard\LiongardAgent\MachineID'
+    )
+    foreach ($path in $paths) {
+        if (Test-Path $path) {
+            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            Write-LiongardLog "Cleared registry key: $path"
+        }
+    }
 }
 
 function Get-LiongardAgentDeviceGuid {
-    $path = 'HKLM:\SOFTWARE\WOW6432Node\Liongard\LiongardAgent'
-    $name = 'MachineID'
-    try {
-        $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name
-        if ($val) {
-            Write-LiongardLog "Read DeviceGuid from $path\$name : $val"
-            return $val
+    $name = 'AgentGuid'
+    $paths = @(
+        'HKLM:\SOFTWARE\WOW6432Node\Liongard\LiongardAgent\MachineID',
+        'HKLM:\SOFTWARE\Liongard\LiongardAgent\MachineID'
+    )
+    foreach ($path in $paths) {
+        try {
+            $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name
+            if ($val) {
+                Write-LiongardLog "Read DeviceGuid from $path\$name : $val"
+                return $val
+            }
+        } catch {
+            Write-LiongardLog "Could not read $path\$name : $($_.Exception.Message)" "WARNING"
         }
-    } catch {
-        Write-LiongardLog "Could not read $path\$name : $($_.Exception.Message)" "WARNING"
     }
     return $null
 }
 
 function Assert-AgentDeviceGuid {
     param(
-        [Parameter(Mandatory)] [string]$ExpectedGuid
+        [string]$ExpectedGuid
     )
 
     $actual = Get-LiongardAgentDeviceGuid
@@ -385,19 +399,28 @@ function Assert-AgentDeviceGuid {
         throw "Could not read effective DeviceGuid for installed agent."
     }
 
-    if (([Guid]$actual) -ne ([Guid]$ExpectedGuid)) {
-        throw "DeviceGuid mismatch. Expected: $ExpectedGuid  Got: $actual"
+    try { [Guid]$actual | Out-Null } catch {
+        throw "AgentGuid in registry is not a valid GUID: $actual"
     }
 
-    Write-LiongardLog "DeviceGuid matches expected value: $ExpectedGuid" "SUCCESS"
+    if ($ExpectedGuid) {
+        if (([Guid]$actual) -ne ([Guid]$ExpectedGuid)) {
+            throw "DeviceGuid mismatch. Expected: $ExpectedGuid  Got: $actual"
+        }
+        Write-LiongardLog "DeviceGuid matches expected value: $ExpectedGuid" "SUCCESS"
+    } else {
+        Write-LiongardLog "DeviceGuid is a valid GUID: $actual" "SUCCESS"
+    }
 }
 
 function Invoke-DeviceGuidScenario {
     param(
         [Parameter(Mandatory)] [string]$ScenarioName,
-        [Parameter(Mandatory)] [string]$ExpectedDeviceGuid,
+        [string]$ExpectedDeviceGuid,
         [Guid]$DeviceGuid
     )
+
+    Clear-AgentGuidRegistry
 
     $installParams = @{
         ScenarioName = $ScenarioName
@@ -693,15 +716,9 @@ Write-LiongardLog "Scenario 10 will use generated DeviceGuid override: $generate
 Invoke-DeviceGuidScenario -ScenarioName "Scenario 10: DeviceGuid override" `
     -DeviceGuid $generatedDeviceGuid -ExpectedDeviceGuid ([string]$generatedDeviceGuid)
 
-# Scenario 11: no -DeviceGuid -> agent GUID defaults to the system MachineGuid
-try {
-    $machineGuid = Get-SystemMachineGuid
-    Invoke-DeviceGuidScenario -ScenarioName "Scenario 11: DeviceGuid defaults to MachineGuid" `
-        -ExpectedDeviceGuid $machineGuid
-} catch {
-    Write-LiongardLog "Scenario 11 (default DeviceGuid) failed to read system MachineGuid: $($_.Exception.Message)" "ERROR"
-    $script:TestResults += @{ Scenario = "Scenario 11: DeviceGuid defaults to MachineGuid"; Status = "FAILED"; Reason = "Could not read HKLM MachineGuid: $($_.Exception.Message)" }
-}
+# Scenario 11: no -DeviceGuid -> agent generates and persists its own GUID
+Invoke-DeviceGuidScenario -ScenarioName "Scenario 11: DeviceGuid auto-generated" `
+    -ExpectedDeviceGuid $null
 
 # Results summary
 Write-LiongardLog "========================================"
