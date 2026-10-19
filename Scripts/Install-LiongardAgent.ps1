@@ -2471,9 +2471,9 @@ function Get-FinalRunStatus {
     param(
         [Parameter(Mandatory)][int]$InstallerExitCode,
         [Parameter(Mandatory)][bool]$AgentDetected,
-        [Parameter(Mandatory)][pscustomobject[]]$Components,
-        [Parameter(Mandatory)][string[]]$Warnings,
-        [Parameter(Mandatory)][string[]]$Errors
+        [Parameter(Mandatory)][AllowEmptyCollection()][pscustomobject[]]$Components,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Warnings,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Errors
     )
 
     if ($Errors.Count -gt 0 -and ($InstallerExitCode -ne 0 -and $InstallerExitCode -ne 3010)) {
