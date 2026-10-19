@@ -1756,7 +1756,7 @@ function Get-MaskedInstallArgument {
 }
 
 function Get-ProxyEnvironmentSnapshot {
-    $entries = New-Object System.Collections.Generic.List[object]
+    $entries = [System.Collections.Generic.List[object]]::new()
     $proxyNames = @(
         'HTTP_PROXY',
         'HTTPS_PROXY',
@@ -2001,7 +2001,7 @@ function Get-BundlePackageRecord {
 }
 
 function Get-VcRuntimeRegistryStatus {
-    $results = New-Object System.Collections.Generic.List[object]
+    $results = [System.Collections.Generic.List[object]]::new()
 
     foreach ($arch in @('X86','X64')) {
         $path = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$arch"
