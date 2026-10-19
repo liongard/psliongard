@@ -16,7 +16,9 @@
 
 .PARAMETER InstancePrefix
     Liongard instance prefix (e.g. "us1" for us1.app.liongard.com). May also be
-    passed as a full URL - the script extracts the subdomain automatically.
+    passed as a full URL - the script extracts the subdomain automatically. A
+    hostname outside app.liongard.com (e.g. "nemean.appdev.liongard.com") is used
+    as the full host.
 
 .PARAMETER ApiTokenKey
     API key used for Liongard platform operations (environment resolution, agent
@@ -1076,7 +1078,7 @@ function Get-LiongardEnvironment {
         [Parameter(Mandatory)][hashtable]$Headers
     )
 
-    $uri = "https://$InstancePrefix.app.liongard.com/api/v1/environments"
+    $uri = "https://$(Get-LiongardHost -InstancePrefix $InstancePrefix)/api/v1/environments"
 
     try {
         $response = Invoke-RestMethod -Uri $uri -Headers $Headers -ErrorAction Stop
@@ -1241,6 +1243,18 @@ function Resolve-InstancePrefix {
     }
 
     return $sanitized
+}
+
+# Full hostname of the instance. A bare prefix ("us1") is a production instance under app.liongard.com; any other
+# hostname (e.g. "nemean.appdev.liongard.com", a dev or QA instance) is used as given.
+function Get-LiongardHost {
+    param([Parameter(Mandatory)][string]$InstancePrefix)
+
+    if ($InstancePrefix -match '\.') {
+        return $InstancePrefix
+    }
+
+    return "$InstancePrefix.app.liongard.com"
 }
 
 function Get-LocalMachineGuid {
@@ -1556,7 +1570,7 @@ function Invoke-LiongardRemoteAgentRemoval {
     }
 
     Write-Host ("Attempting to delete Liongard agent ID {0} (score {1}). Signals: {2}" -f $agentId, $match.Score, ($match.Reasons -join '; '))
-    $liongardUrl = "$InstancePrefix.app.liongard.com"
+    $liongardUrl = Get-LiongardHost -InstancePrefix $InstancePrefix
     try {
         Remove-LiongardAgent -LiongardURL $liongardUrl -ApiKey $ApiKey -ApiSecret $ApiSecret -AgentID ([int]$agentId) -Confirm:$false
         Write-Host ("Remote Liongard agent ID {0} deleted successfully." -f $agentId)
@@ -2573,7 +2587,7 @@ try {
     Write-Host "No Liongard Agent installation was found. Proceeding with installation..."
 
     $instancePrefix = Resolve-InstancePrefix -Value $InstancePrefix
-    $liongardHost = "$instancePrefix.app.liongard.com"
+    $liongardHost = Get-LiongardHost -InstancePrefix $instancePrefix
     $localHostname = $env:COMPUTERNAME
     $localMachineGuid = Get-LocalMachineGuid
     $localHostnames = Get-LocalHostnameVariant -PrimaryName $localHostname
